@@ -1,14 +1,10 @@
 'use client'
 import Image from "next/image";
-import ShapeBlur from "@/components/ShapeBlur";
 import { ModeToggle } from "@/components/ModeToggle";
-import Magnet from "@/components/Magnet";
-import { Button } from "@/components/ui/button";
-import { Star } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import StarButton from "@/components/StarButton";
-
+import Spline from "@splinetool/react-spline";
 export default function Home() {
   const { theme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -48,6 +44,7 @@ export default function Home() {
           circleSize={0.5}
           circleEdge={1}
         /> */}
+        <Spline scene="https://prod.spline.design/cQL7zcFxCElzaoG8/scene.splinecode"/>
       </div>
     </div>
   );
