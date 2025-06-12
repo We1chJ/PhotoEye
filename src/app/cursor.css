@@ -1,0 +1,151 @@
+/* Hide default cursor on the entire page */
+html, body, * {
+  cursor: none !important;
+}
+
+html *, body *, div, span, button, input, a, p, h1, h2, h3, h4, h5, h6 {
+  cursor: none !important;
+}
+
+/* Custom cursor container */
+.custom-cursor {
+  position: fixed;
+  width: 80px;
+  height: 60px;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.custom-cursor.visible {
+  opacity: 1;
+}
+
+/* Instant click shrink effect */
+.custom-cursor.clicked {
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: none;
+}
+
+/* Corner frame elements - Default (dark theme) */
+.corner {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border: 2px solid #ffffff;
+  pointer-events: none;
+}
+
+.corner-tl {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+
+.corner-tr {
+  top: 0;
+  right: 0;
+  border-left: none;
+  border-bottom: none;
+}
+
+.corner-bl {
+  bottom: 0;
+  left: 0;
+  border-right: none;
+  border-top: none;
+}
+
+.corner-br {
+  bottom: 0;
+  right: 0;
+  border-left: none;
+  border-top: none;
+}
+
+/* Crosshair - Default (dark theme) */
+.crosshair-h {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.6);
+  transform: translate(-50%, -50%);
+}
+
+.crosshair-v {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 20px;
+  background-color: rgba(255, 255, 255, 0.6);
+  transform: translate(-50%, -50%);
+}
+
+/* Shadow - Default (dark theme) */
+.custom-cursor::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: rgba(0, 0, 0, 0.1);
+  filter: blur(4px);
+  z-index: -1;
+}
+
+/* Scanning line effect - Default (dark theme) */
+.scan-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #ffffff, transparent);
+  animation: scan 2s ease-in-out infinite;
+}
+
+@keyframes scan {
+  0%, 100% { 
+    top: 0; 
+    opacity: 0; 
+  }
+  50% { 
+    top: calc(100% - 1px); 
+    opacity: 1; 
+  }
+}
+
+/* Light theme overrides */
+[data-theme="light"] .corner,
+.light .corner,
+html.light .corner {
+  border-color: #000000;
+}
+
+[data-theme="light"] .crosshair-h,
+[data-theme="light"] .crosshair-v,
+.light .crosshair-h,
+.light .crosshair-v,
+html.light .crosshair-h,
+html.light .crosshair-v {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .custom-cursor::before,
+.light .custom-cursor::before,
+html.light .custom-cursor::before {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] .scan-line,
+.light .scan-line,
+html.light .scan-line {
+  background: linear-gradient(90deg, transparent, #000000, transparent);
+}
