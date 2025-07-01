@@ -5,6 +5,8 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import StarButton from "@/components/StarButton";
 import Spline from "@splinetool/react-spline";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 export default function Home() {
   const { theme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -30,6 +32,14 @@ export default function Home() {
         </div>
         <div className="flex items-center space-x-4">
           <StarButton />
+          <Link href="/login">
+            <Button
+              className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white hover:opacity-90"
+              style={{ backgroundClip: "padding-box", border: "none" }}
+            >
+              Log In
+            </Button>
+          </Link>
           <ModeToggle />
         </div>
       </div>
@@ -44,8 +54,8 @@ export default function Home() {
           circleSize={0.5}
           circleEdge={1}
         /> */}
-        <Spline scene="https://prod.spline.design/cQL7zcFxCElzaoG8/scene.splinecode"/>
+        <Spline scene="https://prod.spline.design/cQL7zcFxCElzaoG8/scene.splinecode" />
       </div>
-    </div>
+    </div >
   );
 }
