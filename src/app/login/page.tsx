@@ -54,8 +54,12 @@ export default function LoginPage() {
     const handleGoogleSignin = async () => {
         setIsLoading(true)
         try {
-            supabase.auth.signInWithOAuth({
+            const baseUrl = window.location.origin;
+            await supabase.auth.signInWithOAuth({
                 provider: 'google',
+                options: {
+                    redirectTo: `${baseUrl}/game`,
+                },
             })
         } catch (error: any) {
             toast.error(error?.message || "Google sign-in failed")
