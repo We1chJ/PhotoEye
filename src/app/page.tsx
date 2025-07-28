@@ -15,6 +15,7 @@ export default function Home() {
   if (!mounted) return null
   return (
     <div className="w-screen h-screen px-60">
+      {/* Header */}
       <div className="py-2 flex items-center justify-between">
         <div className="flex items-center">
           <div className="w-20 h-20 overflow-hidden rounded-full inline-block align-middle">
