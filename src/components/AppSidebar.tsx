@@ -1,37 +1,32 @@
-import { Calendar, Home, Inbox, Search, Settings } from "lucide-react"
+'use client'
+import { Map, Settings, Trophy, User } from "lucide-react"
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar"
 
 // Menu items.
 const items = [
   {
-    title: "Home",
+    title: "Map",
     url: "#",
-    icon: Home,
+    icon: Map,
   },
   {
-    title: "Inbox",
+    title: "Leaderboard",
     url: "#",
-    icon: Inbox,
-  },
-  {
-    title: "Calendar",
-    url: "#",
-    icon: Calendar,
-  },
-  {
-    title: "Search",
-    url: "#",
-    icon: Search,
+    icon: Trophy,
   },
   {
     title: "Settings",
@@ -41,16 +36,25 @@ const items = [
 ]
 
 export function AppSidebar() {
+  const { state } = useSidebar()
+  const isCollapsed = state === "collapsed"
+
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <div className="flex items-center justify-start p-2">
+          <SidebarTrigger />
+        </div>
+      </SidebarHeader>
+      
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Application</SidebarGroupLabel>
+          {!isCollapsed && <SidebarGroupLabel>Game</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
+                  <SidebarMenuButton asChild tooltip={item.title}>
                     <a href={item.url}>
                       <item.icon />
                       <span>{item.title}</span>
@@ -62,6 +66,19 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Account">
+              <a href="#" className="flex items-center gap-2">
+                <User />
+                <span>Account</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   )
 }
