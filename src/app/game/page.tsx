@@ -6,7 +6,7 @@ const GamePage = () => {
   const mapRef = useRef(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [panorama, setPanorama] = useState(null);
-  
+
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY;
 
   useEffect(() => {
@@ -32,7 +32,7 @@ const GamePage = () => {
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&callback=initGoogleMaps`;
     script.async = true;
     script.defer = true;
-    
+
     script.onerror = () => {
       console.error('Failed to load Google Maps script');
     };
@@ -58,10 +58,10 @@ const GamePage = () => {
         linksControl: false,
         panControl: false,
         zoomControl: false,
-        addressControl: false,
+        // addressControl: false,
         fullscreenControl: false,
         // clickToGo: false,
-        scrollwheel: false,
+        // scrollwheel: false,
         enableCloseButton: false,
       });
 
@@ -96,7 +96,7 @@ const GamePage = () => {
             heading: 0,
             pitch: 0
           });
-          
+
           console.log('Moved Street View to:', place.displayName, place.formattedAddress);
         }
       });
@@ -109,22 +109,11 @@ const GamePage = () => {
   };
 
   return (
-    <>
+    <div className="w-full h-full relative">
       {/* Official Google Places Autocomplete Card */}
-      <div 
+      <div
         id="place-autocomplete-card"
-        style={{
-          position: 'fixed',
-          top: '20px',
-          left: '20px',
-          zIndex: 1000,
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-          padding: '10px',
-          width: '300px',
-          fontFamily: 'Roboto, Arial, sans-serif'
-        }}
+        className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50 bg-white rounded-lg shadow-lg p-2.5 w-80 font-sans"
       >
         {/* The Google Places Autocomplete Element will be inserted here */}
       </div>
@@ -132,16 +121,9 @@ const GamePage = () => {
       {/* Street View Container */}
       <div
         ref={mapRef}
-        style={{ 
-          width: "100vw", 
-          height: "100vh", 
-          position: "fixed", 
-          top: 0, 
-          left: 0,
-          backgroundColor: '#f0f0f0'
-        }}
+        className="absolute inset-0 w-full h-full bg-gray-100"
       />
-    </>
+    </div>
   );
 };
 
