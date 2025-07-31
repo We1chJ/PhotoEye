@@ -1,5 +1,6 @@
 'use client'
 import { Map, Settings, Trophy, User } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 import {
   Sidebar,
@@ -41,11 +42,19 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <div className="flex items-center justify-start p-2">
-          <SidebarTrigger />
-        </div>
+      <SidebarHeader className="justify-start flex">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Toggle Sidebar">
+              <SidebarTrigger className="bg-black text-white flex items-center gap-2">
+                {!isCollapsed && <span>Collapse</span>}
+              </SidebarTrigger>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
+      
+      {isCollapsed && <div className="border-t border-gray-200 dark:border-gray-700 mx-2" />}
       
       <SidebarContent>
         <SidebarGroup>
