@@ -27,9 +27,9 @@ const GamePage = () => {
       initializeStreetView();
     };
 
-    // Load Google Maps script with places library
+    // Load Google Maps script (removed places library since we're not using autocomplete)
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&callback=initGoogleMaps`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initGoogleMaps`;
     script.async = true;
     script.defer = true;
 
@@ -58,50 +58,13 @@ const GamePage = () => {
         linksControl: false,
         panControl: false,
         zoomControl: false,
-        // addressControl: false,
         fullscreenControl: false,
-        // clickToGo: false,
-        // scrollwheel: false,
         enableCloseButton: false,
       });
 
       setPanorama(streetViewPanorama);
 
-      // Request needed libraries for Places Autocomplete
-      const [{ PlaceAutocompleteElement }] = await Promise.all([
-        //@ts-ignore
-        google.maps.importLibrary("places")
-      ]);
-
-      // Create the official Google Places Autocomplete Element
-      const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement();
-      placeAutocomplete.id = 'place-autocomplete-input';
-      placeAutocomplete.locationBias = { lat: 40.749933, lng: -73.98633 };
-
-      // Create search card container
-      const card = document.getElementById('place-autocomplete-card');
-      if (card) {
-        card.appendChild(placeAutocomplete);
-      }
-
-      // Add event listener for place selection
-      placeAutocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
-        const place = placePrediction.toPlace();
-        await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
-
-        // Move Street View to the selected location
-        if (place.location) {
-          streetViewPanorama.setPosition(place.location);
-          streetViewPanorama.setPov({
-            heading: 0,
-            pitch: 0
-          });
-
-          console.log('Moved Street View to:', place.displayName, place.formattedAddress);
-        }
-      });
-
-      console.log('Street View with official Google Places Autocomplete initialized!');
+      console.log('Street View initialized!');
 
     } catch (error) {
       console.error('Error initializing Street View:', error);
@@ -110,14 +73,6 @@ const GamePage = () => {
 
   return (
     <div className="w-full h-full relative">
-      {/* Official Google Places Autocomplete Card */}
-      <div
-        id="place-autocomplete-card"
-        className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50 bg-white rounded-lg shadow-lg p-2.5 w-80 font-sans"
-      >
-        {/* The Google Places Autocomplete Element will be inserted here */}
-      </div>
-
       {/* Street View Container */}
       <div
         ref={mapRef}

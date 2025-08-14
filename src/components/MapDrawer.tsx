@@ -13,7 +13,7 @@ import { Map } from 'lucide-react'
 import { SidebarMenuButton } from './ui/sidebar'
 
 // Google Maps component
-const GoogleMap = ({ onLocationSelect, searchQuery, setSearchQuery }) => {
+const GoogleMap = ({ onLocationSelect }) => {
     const mapRef = React.useRef(null);
     const [map, setMap] = React.useState(null);
     const [isLoaded, setIsLoaded] = React.useState(false);
@@ -21,10 +21,8 @@ const GoogleMap = ({ onLocationSelect, searchQuery, setSearchQuery }) => {
     const [currentMarker, setCurrentMarker] = React.useState(null);
     const [geocoder, setGeocoder] = React.useState(null);
     const [placesService, setPlacesService] = React.useState(null);
-    const [autocompleteService, setAutocompleteService] = React.useState(null);
-    const [predictions, setPredictions] = React.useState([]);
-    const [showPredictions, setShowPredictions] = React.useState(false);
-    const [selectedPredictionIndex, setSelectedPredictionIndex] = React.useState(-1);
+    const [streetView, setStreetView] = React.useState(null);
+    const [isStreetViewVisible, setIsStreetViewVisible] = React.useState(false);
 
     // Load Google Maps API
     React.useEffect(() => {
@@ -41,8 +39,23 @@ const GoogleMap = ({ onLocationSelect, searchQuery, setSearchQuery }) => {
             return;
         }
 
+        // Check if script is already loading
+        const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+        if (existingScript) {
+            // If script exists but not loaded yet, wait for it
+            const checkLoaded = setInterval(() => {
+                if (window.google && window.google.maps) {
+                    setIsLoaded(true);
+                    clearInterval(checkLoaded);
+                }
+            }, 100);
+            
+            // Clear interval after 10 seconds to prevent infinite checking
+            setTimeout(() => clearInterval(checkLoaded), 10000);
+            return;
+        }
+
         const script = document.createElement('script');
-        // Include places library in the API call
         script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
         script.async = true;
         script.defer = true;
@@ -56,310 +69,282 @@ const GoogleMap = ({ onLocationSelect, searchQuery, setSearchQuery }) => {
         };
 
         document.head.appendChild(script);
-
-        return () => {
-            // Cleanup script if component unmounts
-            if (document.head.contains(script)) {
-                document.head.removeChild(script);
-            }
-        };
     }, []);
 
     // Initialize map when API is loaded
     React.useEffect(() => {
-        if (isLoaded && mapRef.current && !map) {
-            const mapInstance = new window.google.maps.Map(mapRef.current, {
-                center: { lat: 42.1015, lng: -72.5898 }, // Springfield, Massachusetts
-                zoom: 13,
-                mapTypeId: 'roadmap',
-                disableDefaultUI: false,
-                zoomControl: true,
-                streetViewControl: true,
-                fullscreenControl: true,
-            });
-            
-            // Initialize geocoder and places service
-            const geocoderInstance = new window.google.maps.Geocoder();
-            const placesServiceInstance = new window.google.maps.places.PlacesService(mapInstance);
-            const autocompleteServiceInstance = new window.google.maps.places.AutocompleteService();
-            
-            setGeocoder(geocoderInstance);
-            setPlacesService(placesServiceInstance);
-            setAutocompleteService(autocompleteServiceInstance);
-            
-            // Add initial marker
-            const initialMarker = new window.google.maps.Marker({
-                position: { lat: 42.1015, lng: -72.5898 },
-                map: mapInstance,
-                title: 'Springfield, Massachusetts',
-                draggable: true,
-                animation: window.google.maps.Animation.DROP
-            });
-            
-            setCurrentMarker(initialMarker);
+        if (isLoaded && mapRef.current && !map && window.google && window.google.maps) {
+            try {
+                const mapInstance = new window.google.maps.Map(mapRef.current, {
+                    center: { lat: 42.1015, lng: -72.5898 }, // Springfield, Massachusetts
+                    zoom: 13,
+                    mapTypeId: 'roadmap',
+                    disableDefaultUI: false,
+                    zoomControl: true,
+                    streetViewControl: true,
+                    fullscreenControl: true,
+                });
+                
+                // Initialize geocoder
+                const geocoderInstance = new window.google.maps.Geocoder();
+                setGeocoder(geocoderInstance);
+                
+                // Initialize places service if available
+                if (window.google.maps.places) {
+                    const placesServiceInstance = new window.google.maps.places.PlacesService(mapInstance);
+                    setPlacesService(placesServiceInstance);
+                }
+                
+                // Add initial marker
+                const initialMarker = new window.google.maps.Marker({
+                    position: { lat: 42.1015, lng: -72.5898 },
+                    map: mapInstance,
+                    title: 'Springfield, Massachusetts',
+                    draggable: true,
+                    animation: window.google.maps.Animation.DROP
+                });
+                
+                setCurrentMarker(initialMarker);
 
-            // Function to update marker position and get location info
-            const updateMarkerAndLocation = (position, marker) => {
-                const lat = position.lat();
-                const lng = position.lng();
-                
-                // Update marker position
-                marker.setPosition(position);
-                
-                // Animate marker
-                marker.setAnimation(window.google.maps.Animation.BOUNCE);
-                setTimeout(() => {
-                    marker.setAnimation(null);
-                }, 750);
-                
-                // Get address from coordinates
+                // Get the Street View panorama
+                const streetViewPanorama = mapInstance.getStreetView();
+                setStreetView(streetViewPanorama);
+
+                // Function to update marker position and get location info
+                const updateMarkerAndLocation = (position, marker, source = 'map') => {
+                    const lat = position.lat();
+                    const lng = position.lng();
+                    
+                    // Update marker position
+                    marker.setPosition(position);
+                    
+                    // Animate marker only if not from street view to avoid excessive animations
+                    if (source !== 'streetview') {
+                        marker.setAnimation(window.google.maps.Animation.BOUNCE);
+                        setTimeout(() => {
+                            marker.setAnimation(null);
+                        }, 750);
+                    }
+                    
+                    // Get address from coordinates
+                    geocoderInstance.geocode(
+                        { location: position },
+                        (results, status) => {
+                            let address = 'Address not found';
+                            if (status === 'OK' && results[0]) {
+                                address = results[0].formatted_address;
+                            }
+                            
+                            onLocationSelect({
+                                lat: lat,
+                                lng: lng,
+                                address: address,
+                                source: source // Track where the update came from
+                            });
+                        }
+                    );
+                };
+
+                // Handle map clicks
+                mapInstance.addListener('click', (event) => {
+                    updateMarkerAndLocation(event.latLng, initialMarker, 'map');
+                });
+
+                // Handle marker drag
+                initialMarker.addListener('dragend', (event) => {
+                    updateMarkerAndLocation(event.latLng, initialMarker, 'marker');
+                });
+
+                // Track Street View visibility changes
+                streetViewPanorama.addListener('visible_changed', () => {
+                    const isVisible = streetViewPanorama.getVisible();
+                    setIsStreetViewVisible(isVisible);
+                    
+                    if (isVisible) {
+                        console.log('Street View opened');
+                        // Update location when Street View opens
+                        const position = streetViewPanorama.getPosition();
+                        if (position) {
+                            updateMarkerAndLocation(position, initialMarker, 'streetview');
+                        }
+                    } else {
+                        console.log('Street View closed');
+                    }
+                });
+
+                // Track Street View position changes (when user navigates in street view)
+                streetViewPanorama.addListener('position_changed', () => {
+                    if (streetViewPanorama.getVisible()) {
+                        const position = streetViewPanorama.getPosition();
+                        if (position) {
+                            // Update marker and location state when user moves in Street View
+                            updateMarkerAndLocation(position, initialMarker, 'streetview');
+                            // Also center the map on the new Street View location
+                            mapInstance.setCenter(position);
+                        }
+                    }
+                });
+
+                // Track Street View POV changes (when user looks around)
+                streetViewPanorama.addListener('pov_changed', () => {
+                    if (streetViewPanorama.getVisible()) {
+                        const pov = streetViewPanorama.getPov();
+                        const position = streetViewPanorama.getPosition();
+                        
+                        // You can use this to track viewing direction if needed
+                        console.log('Street View POV changed:', {
+                            heading: pov.heading,
+                            pitch: pov.pitch,
+                            position: position ? { lat: position.lat(), lng: position.lng() } : null
+                        });
+                    }
+                });
+
+                // Set initial location
                 geocoderInstance.geocode(
-                    { location: position },
+                    { location: { lat: 42.1015, lng: -72.5898 } },
                     (results, status) => {
-                        let address = 'Address not found';
+                        let address = 'Springfield, Massachusetts';
                         if (status === 'OK' && results[0]) {
                             address = results[0].formatted_address;
                         }
                         
                         onLocationSelect({
-                            lat: lat,
-                            lng: lng,
-                            address: address
+                            lat: 42.1015,
+                            lng: -72.5898,
+                            address: address,
+                            source: 'initial'
                         });
                     }
                 );
-            };
 
-            // Handle map clicks - only one marker at a time
-            mapInstance.addListener('click', (event) => {
-                updateMarkerAndLocation(event.latLng, initialMarker);
-            });
+                setMap(mapInstance);
+                
+                // Initialize autocomplete after map is ready
+                setTimeout(() => {
+                    initializeAutocomplete(mapInstance, initialMarker, geocoderInstance);
+                }, 500);
 
-            // Handle marker drag
-            initialMarker.addListener('dragend', (event) => {
-                updateMarkerAndLocation(event.latLng, initialMarker);
-            });
-
-            // Set initial location
-            geocoderInstance.geocode(
-                { location: { lat: 42.1015, lng: -72.5898 } },
-                (results, status) => {
-                    let address = 'Springfield, Massachusetts';
-                    if (status === 'OK' && results[0]) {
-                        address = results[0].formatted_address;
-                    }
-                    
-                    onLocationSelect({
-                        lat: 42.1015,
-                        lng: -72.5898,
-                        address: address
-                    });
-                }
-            );
-
-            setMap(mapInstance);
+            } catch (error) {
+                console.error('Error initializing map:', error);
+                setError('Failed to initialize map');
+            }
         }
     }, [isLoaded, map, onLocationSelect]);
 
-    // Handle autocomplete predictions
-    React.useEffect(() => {
-        if (!autocompleteService || !searchQuery.trim()) {
-            setPredictions([]);
-            setShowPredictions(false);
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            const request = {
-                input: searchQuery,
-                types: ['establishment', 'geocode'], // Include businesses and addresses
-                componentRestrictions: { country: 'us' }, // Optional: restrict to specific country
-            };
-
-            autocompleteService.getPlacePredictions(request, (predictions, status) => {
-                if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-                    setPredictions(predictions.slice(0, 5)); // Limit to 5 results
-                    setShowPredictions(true);
-                    setSelectedPredictionIndex(-1);
-                } else {
-                    setPredictions([]);
-                    setShowPredictions(false);
-                }
-            });
-        }, 300); // Debounce for 300ms
-
-        return () => clearTimeout(timer);
-    }, [searchQuery, autocompleteService]);
-
-    // Handle prediction selection
-    const selectPrediction = (prediction) => {
-        setSearchQuery(prediction.description);
-        setShowPredictions(false);
-        
-        // Get place details and update map
-        const request = {
-            placeId: prediction.place_id,
-            fields: ['name', 'geometry', 'formatted_address']
-        };
-
-        placesService.getDetails(request, (place, status) => {
-            if (status === window.google.maps.places.PlacesServiceStatus.OK && place.geometry) {
-                const location = place.geometry.location;
-                const lat = location.lat();
-                const lng = location.lng();
-                
-                // Move map to selected place
-                map.setCenter(location);
-                map.setZoom(15);
-                
-                // Move marker
-                currentMarker.setPosition(location);
-                currentMarker.setAnimation(window.google.maps.Animation.BOUNCE);
-                setTimeout(() => {
-                    currentMarker.setAnimation(null);
-                }, 750);
-                
-                // Update location info
-                onLocationSelect({
-                    lat: lat,
-                    lng: lng,
-                    address: place.formatted_address || place.name || prediction.description
-                });
-                
-                // Clear search query after selection
-                setTimeout(() => {
-                    setSearchQuery('');
-                }, 100);
+    // Initialize Google Places Autocomplete Element
+    const initializeAutocomplete = async (mapInstance, marker, geocoderInstance) => {
+        try {
+            // Check if Places library is available
+            if (!window.google || !window.google.maps || !window.google.maps.importLibrary) {
+                console.warn('Google Maps Places library not available, using fallback search');
+                createFallbackSearch(mapInstance, marker, geocoderInstance);
+                return;
             }
-        });
-    };
 
-    // Handle search functionality using Google Places API
-    const handleSearch = () => {
-        if (!searchQuery || !placesService || !map || !currentMarker) return;
+            // Import Places library
+            const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
 
-        // First try Places API findPlaceFromQuery for more accurate results
-        const request = {
-            query: searchQuery,
-            fields: ['name', 'geometry', 'formatted_address', 'place_id']
-        };
+            // Create the official Google Places Autocomplete Element
+            const placeAutocomplete = new PlaceAutocompleteElement();
+            placeAutocomplete.id = 'place-autocomplete-input';
 
-        placesService.findPlaceFromQuery(
-            request,
-            (results, status) => {
-                if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results[0]) {
-                    const place = results[0];
-                    
-                    if (place.geometry && place.geometry.location) {
-                        const location = place.geometry.location;
-                        const lat = location.lat();
-                        const lng = location.lng();
+            // Create search card container in the top search area
+            const card = document.getElementById('top-search-card');
+            if (card) {
+                card.innerHTML = '';
+                card.appendChild(placeAutocomplete);
+            } else {
+                console.warn('top-search-card element not found');
+                return;
+            }
+
+            // Add event listener for place selection
+            placeAutocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
+                try {
+                    const place = placePrediction.toPlace();
+                    await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
+
+                    if (place.location) {
+                        const lat = place.location.lat();
+                        const lng = place.location.lng();
                         
-                        // Move map to found place
-                        map.setCenter(location);
-                        map.setZoom(15);
+                        mapInstance.setCenter(place.location);
+                        mapInstance.setZoom(15);
                         
-                        // Move the single marker to the place
-                        currentMarker.setPosition(location);
-                        currentMarker.setAnimation(window.google.maps.Animation.BOUNCE);
+                        marker.setPosition(place.location);
+                        marker.setAnimation(window.google.maps.Animation.BOUNCE);
                         setTimeout(() => {
-                            currentMarker.setAnimation(null);
+                            marker.setAnimation(null);
                         }, 750);
-                        
-                        // Update location info with place data
+
                         onLocationSelect({
                             lat: lat,
                             lng: lng,
-                            address: place.formatted_address || place.name || 'Address not available'
+                            address: place.formattedAddress || place.displayName || 'Address not available',
+                            source: 'search'
                         });
-                        
-                        // Clear search query
-                        setSearchQuery('');
                     }
-                } else {
-                    // Fallback to regular geocoding if Places API doesn't find the location
-                    handleGeocodeSearch();
+                } catch (error) {
+                    console.error('Error handling place selection:', error);
                 }
-            }
-        );
+            });
+
+            console.log('Google Places Autocomplete initialized successfully!');
+
+        } catch (error) {
+            console.error('Error initializing Places Autocomplete:', error);
+            createFallbackSearch(mapInstance, marker, geocoderInstance);
+        }
     };
 
-    // Fallback geocoding search
-    const handleGeocodeSearch = () => {
-        if (!geocoder || !map || !currentMarker) return;
-
-        geocoder.geocode({ address: searchQuery }, (results, status) => {
-            if (status === 'OK' && results[0]) {
-                const location = results[0].geometry.location;
-                const lat = location.lat();
-                const lng = location.lng();
-                
-                // Move map to searched location
-                map.setCenter(location);
-                map.setZoom(15);
-                
-                // Move the single marker to searched location
-                currentMarker.setPosition(location);
-                currentMarker.setAnimation(window.google.maps.Animation.BOUNCE);
-                setTimeout(() => {
-                    currentMarker.setAnimation(null);
-                }, 750);
-                
-                // Update location info
-                onLocationSelect({
-                    lat: lat,
-                    lng: lng,
-                    address: results[0].formatted_address
+    // Fallback search function
+    const createFallbackSearch = (mapInstance, marker, geocoderInstance) => {
+        const card = document.getElementById('top-search-card');
+        if (card) {
+            card.innerHTML = `
+                <input 
+                    type="text" 
+                    placeholder="Search for places..." 
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    id="fallback-search"
+                />
+            `;
+            
+            const input = document.getElementById('fallback-search');
+            if (input) {
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && geocoderInstance) {
+                        const address = e.target.value.trim();
+                        if (address) {
+                            geocoderInstance.geocode({ address: address }, (results, status) => {
+                                if (status === 'OK' && results[0]) {
+                                    const location = results[0].geometry.location;
+                                    mapInstance.setCenter(location);
+                                    mapInstance.setZoom(15);
+                                    marker.setPosition(location);
+                                    marker.setAnimation(window.google.maps.Animation.BOUNCE);
+                                    setTimeout(() => {
+                                        marker.setAnimation(null);
+                                    }, 750);
+                                    
+                                    onLocationSelect({
+                                        lat: location.lat(),
+                                        lng: location.lng(),
+                                        address: results[0].formatted_address,
+                                        source: 'search'
+                                    });
+                                    
+                                    e.target.value = '';
+                                } else {
+                                    alert('Location not found. Please try a different search term.');
+                                }
+                            });
+                        }
+                    }
                 });
-                
-                // Clear search query
-                setSearchQuery('');
-            } else {
-                alert('Location not found. Please try a different search term.');
             }
-        });
-    };
-
-    // Handle search on Enter key with navigation support
-    const handleKeyPress = (event) => {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            if (showPredictions && selectedPredictionIndex >= 0 && predictions[selectedPredictionIndex]) {
-                selectPrediction(predictions[selectedPredictionIndex]);
-            } else {
-                handleSearch();
-            }
-        } else if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            if (showPredictions) {
-                setSelectedPredictionIndex(prev => 
-                    prev < predictions.length - 1 ? prev + 1 : prev
-                );
-            }
-        } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            if (showPredictions) {
-                setSelectedPredictionIndex(prev => prev > 0 ? prev - 1 : -1);
-            }
-        } else if (event.key === 'Escape') {
-            setShowPredictions(false);
-            setSelectedPredictionIndex(-1);
         }
-    };
-
-    // Handle input focus
-    const handleInputFocus = () => {
-        if (searchQuery.trim() && predictions.length > 0) {
-            setShowPredictions(true);
-        }
-    };
-
-    // Handle input blur (with delay to allow clicking on predictions)
-    const handleInputBlur = () => {
-        setTimeout(() => {
-            setShowPredictions(false);
-            setSelectedPredictionIndex(-1);
-        }, 150);
     };
 
     if (error) {
@@ -387,71 +372,29 @@ const GoogleMap = ({ onLocationSelect, searchQuery, setSearchQuery }) => {
 
     return (
         <div className="flex flex-col h-full">
-            {/* Search Bar */}
-            <div className="p-4 border-b bg-white relative">
-                <div className="flex gap-2 relative">
-                    <div className="flex-1 relative">
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={handleKeyPress}
-                            onFocus={handleInputFocus}
-                            onBlur={handleInputBlur}
-                            placeholder="Search for places, businesses, or addresses..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            autoComplete="off"
-                        />
-                        
-                        {/* Autocomplete Predictions Dropdown */}
-                        {showPredictions && predictions.length > 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                                {predictions.map((prediction, index) => (
-                                    <div
-                                        key={prediction.place_id}
-                                        className={`px-3 py-2 cursor-pointer hover:bg-gray-100 border-b border-gray-100 last:border-b-0 ${
-                                            index === selectedPredictionIndex ? 'bg-blue-50' : ''
-                                        }`}
-                                        onClick={() => selectPrediction(prediction)}
-                                        onMouseDown={(e) => e.preventDefault()} // Prevent input blur
-                                    >
-                                        <div className="flex items-start">
-                                            <div className="flex-shrink-0 mt-1 mr-3">
-                                                <div className="w-4 h-4 bg-gray-400 rounded-full flex items-center justify-center">
-                                                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                                                </div>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-gray-900 truncate">
-                                                    {prediction.structured_formatting?.main_text || 
-                                                     prediction.description.split(',')[0]}
-                                                </div>
-                                                <div className="text-xs text-gray-500 truncate">
-                                                    {prediction.structured_formatting?.secondary_text || 
-                                                     prediction.description.split(',').slice(1).join(',').trim()}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                    
-                    <Button 
-                        onClick={handleSearch}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                        Search
-                    </Button>
+            {/* Top Search Bar */}
+            <div className="flex-shrink-0 p-4 border-b bg-white">
+                <div
+                    id="top-search-card"
+                    className="w-full bg-gray-50 rounded-lg p-2"
+                >
+                    <div className="text-sm text-gray-600 mb-2">Search for places...</div>
                 </div>
+                
+                {/* Street View Status Indicator */}
+                {isStreetViewVisible && (
+                    <div className="mt-2 px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full inline-flex items-center">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
+                        Street View Active - Location updates as you navigate
+                    </div>
+                )}
             </div>
             
             {/* Map Container */}
             <div 
                 ref={mapRef} 
                 className="flex-1 w-full"
-                style={{ minHeight: '500px' }}
+                style={{ minHeight: '400px' }}
             />
         </div>
     );
@@ -464,7 +407,6 @@ const MapDrawer = () => {
         lng: -72.5898,
         address: 'Loading...'
     });
-    const [searchQuery, setSearchQuery] = React.useState('');
 
     const handleLocationSelect = (locationData) => {
         setSelectedLocation(locationData);
@@ -496,15 +438,11 @@ const MapDrawer = () => {
             <DrawerContent className="!w-3/4 !max-w-none h-[90vh] flex flex-col">
                 <DrawerHeader className="flex-shrink-0">
                     <DrawerTitle>Map View</DrawerTitle>
-                    <DrawerDescription>Search, navigate and select your location on the map.</DrawerDescription>
+                    <DrawerDescription>Search, navigate and select your location on the map using the search bar above the map.</DrawerDescription>
                 </DrawerHeader>
                 
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    <GoogleMap 
-                        onLocationSelect={handleLocationSelect} 
-                        searchQuery={searchQuery}
-                        setSearchQuery={setSearchQuery}
-                    />
+                    <GoogleMap onLocationSelect={handleLocationSelect} />
                     
                     {/* Location Display */}
                     <div className="flex-shrink-0 p-4 bg-gray-50 border-t">
@@ -512,7 +450,24 @@ const MapDrawer = () => {
                         <div className="space-y-1 text-sm">
                             <p><span className="font-medium">Address:</span> {selectedLocation.address}</p>
                             <p><span className="font-medium">Coordinates:</span> {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}</p>
-                            <p className="text-xs text-gray-500">Click anywhere on the map, drag the marker, or use search to update location</p>
+                            {selectedLocation.source && (
+                                <p><span className="font-medium">Source:</span> 
+                                    <span className={`ml-1 px-2 py-1 rounded text-xs ${
+                                        selectedLocation.source === 'streetview' ? 'bg-blue-100 text-blue-800' :
+                                        selectedLocation.source === 'search' ? 'bg-green-100 text-green-800' :
+                                        selectedLocation.source === 'marker' ? 'bg-purple-100 text-purple-800' :
+                                        'bg-gray-100 text-gray-800'
+                                    }`}>
+                                        {selectedLocation.source === 'streetview' ? 'Street View Navigation' :
+                                         selectedLocation.source === 'search' ? 'Search Result' :
+                                         selectedLocation.source === 'marker' ? 'Marker Drag' :
+                                         selectedLocation.source === 'map' ? 'Map Click' : 'Initial Location'}
+                                    </span>
+                                </p>
+                            )}
+                            <p className="text-xs text-gray-500">
+                                Use search, click on map, drag marker, or navigate in Street View to update location
+                            </p>
                         </div>
                     </div>
                 </div>
