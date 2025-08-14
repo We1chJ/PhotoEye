@@ -1,83 +1,210 @@
-'use client'
+'use client';
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react';
+import { Loader } from '@googlemaps/js-api-loader';
+
+const loader = new Loader({
+  apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY || '',
+  version: 'weekly',
+  libraries: ['places'],
+});
+
+// Generates a random Street View location
+function generateLatLong(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    const lat = Math.random() * 180 - 90;
+    const lng = Math.random() * 360 - 180;
+
+    loader.importLibrary('streetView').then(() => {
+      const streetService = new google.maps.StreetViewService();
+      streetService.getPanorama(
+        {
+          location: { lat, lng },
+          preference: google.maps.StreetViewPreference.BEST,
+          radius: 50000,
+          sources: [google.maps.StreetViewSource.OUTDOOR],
+        },
+        (data, status) => {
+          if (status === 'OK' && data) {
+            const latO = (data.location.latLng as google.maps.LatLng).lat();
+            const lngO = (data.location.latLng as google.maps.LatLng).lng();
+            console.log(
+              `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latO},${lngO}`
+            );
+            resolve({ lat: latO, lng: lngO });
+          } else {
+            console.log('Invalid lat and long, retrying...');
+            resolve(null);
+          }
+        }
+      );
+    });
+  });
+}
+
+async function generateRandomLocation(): Promise<{ name: string; lat: number; lng: number }> {
+  let found = false;
+  let output: { lat: number; lng: number } | null = null;
+
+  console.log('Finding random location...');
+  while (!found) {
+    const data = await generateLatLong();
+    if (data) {
+      output = data;
+      found = true;
+    }
+  }
+
+  return {
+    name: 'Street View Location',
+    lat: output!.lat,
+    lng: output!.lng,
+  };
+}
 
 const GamePage = () => {
-  const mapRef = useRef(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [panorama, setPanorama] = useState(null);
+  const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(true);
+  const [locationName, setLocationName] = useState<string>('');
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY;
 
+  // Get user's current location
   useEffect(() => {
-    // Check if Google Maps is already loaded
-    if (window.google) {
-      initializeStreetView();
-      return;
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const coords = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setCurrentCoords(coords);
+          setIsFetchingLocation(false);
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          setIsFetchingLocation(false);
+        }
+      );
+    } else {
+      console.warn('Geolocation not supported');
+      setIsFetchingLocation(false);
     }
+  }, []);
 
-    // Check if script is already loading
-    if (document.querySelector('script[src*="maps.googleapis.com"]')) {
-      return;
-    }
+  // Load Google Maps script
+  useEffect(() => {
+    if (!apiKey) return;
 
-    // Create global callback before loading script
-    window.initGoogleMaps = () => {
+    if ((window as any).google) {
       setIsLoaded(true);
-      initializeStreetView();
-    };
+      return;
+    }
 
-    // Load Google Maps script (removed places library since we're not using autocomplete)
+    if (document.querySelector('script[src*="maps.googleapis.com"]')) return;
+
+    (window as any).initGoogleMaps = () => setIsLoaded(true);
+
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initGoogleMaps`;
     script.async = true;
     script.defer = true;
-
-    script.onerror = () => {
-      console.error('Failed to load Google Maps script');
-    };
-
+    script.onerror = () => console.error('Failed to load Google Maps script');
     document.head.appendChild(script);
 
     return () => {
-      if (window.initGoogleMaps) {
-        delete window.initGoogleMaps;
-      }
+      delete (window as any).initGoogleMaps;
     };
   }, [apiKey]);
 
-  const initializeStreetView = async () => {
-    if (!mapRef.current || !window.google) return;
+  // Initialize Street View
+  useEffect(() => {
+    if (!isLoaded || !currentCoords || !mapRef.current) return;
+    if (panoramaRef.current) return; // already initialized
 
+    panoramaRef.current = new google.maps.StreetViewPanorama(mapRef.current, {
+      position: currentCoords,
+      pov: { heading: 0, pitch: 0 },
+      zoom: 1,
+      linksControl: false,
+      panControl: false,
+      zoomControl: false,
+      fullscreenControl: false,
+      enableCloseButton: false,
+    });
+
+    console.log('Street View initialized at:', currentCoords);
+  }, [isLoaded, currentCoords]);
+
+  // Handle Random Location
+  const handleRandomLocation = async () => {
+    setIsFetchingLocation(true);
     try {
-      // Initialize Street View
-      const streetViewPanorama = new window.google.maps.StreetViewPanorama(mapRef.current, {
-        position: { lat: 40.749933, lng: -73.98633 }, // New York City
-        pov: { heading: 0, pitch: 0 },
-        zoom: 1,
-        linksControl: false,
-        panControl: false,
-        zoomControl: false,
-        fullscreenControl: false,
-        enableCloseButton: false,
-      });
+      const { name, lat, lng } = await generateRandomLocation();
+      console.log('Random location:', name, lat, lng);
 
-      setPanorama(streetViewPanorama);
+      const newCoords = { lat, lng };
+      setCurrentCoords(newCoords);
+      setLocationName(name);
 
-      console.log('Street View initialized!');
-
+      if (panoramaRef.current) {
+        panoramaRef.current.setPosition(newCoords);
+        panoramaRef.current.setPov({ heading: 0, pitch: 0 });
+        panoramaRef.current.setZoom(1);
+      }
     } catch (error) {
-      console.error('Error initializing Street View:', error);
+      console.error('Failed to generate random location:', error);
+    } finally {
+      setIsFetchingLocation(false);
     }
   };
 
   return (
     <div className="w-full h-full relative">
-      {/* Street View Container */}
-      <div
-        ref={mapRef}
-        className="absolute inset-0 w-full h-full bg-gray-100"
-      />
+      <div ref={mapRef} className="absolute inset-0 w-full h-full bg-gray-100" />
+
+      {/* Display location name */}
+      {locationName && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-white bg-opacity-80 px-4 py-2 rounded-md shadow-md">
+          {locationName}
+        </div>
+      )}
+
+      {/* Random Button */}
+      {isLoaded && currentCoords && !isFetchingLocation && (
+        <button
+          onClick={handleRandomLocation}
+          className="absolute top-4 right-4 z-20 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md shadow-lg transition"
+        >
+          🎲 Random Location
+        </button>
+      )}
+
+      {/* Loading Overlay */}
+      {isFetchingLocation && (
+        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center animate-fade-in">
+            <h2 className="text-xl font-semibold mb-3 text-gray-800">
+              Detecting your location
+            </h2>
+            <p className="text-gray-600 mb-4">
+              We only use your location to show nearby Street View. No data is stored.
+            </p>
+            <p className="text-gray-500 text-sm mb-4">
+              Please allow location access in your browser, or proceed with a random location.
+            </p>
+            <button
+              onClick={handleRandomLocation}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+            >
+              Use Random Location
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
