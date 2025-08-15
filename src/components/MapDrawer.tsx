@@ -1,5 +1,6 @@
 'use client'
 import React from 'react'
+import { useSelector, useDispatch } from 'react-redux'
 import {
     Drawer,
     DrawerContent,
@@ -11,6 +12,16 @@ import {
 import { Button } from './ui/button'
 import { Map } from 'lucide-react'
 import { SidebarMenuButton } from './ui/sidebar'
+import { 
+    setLocation, 
+    setCoords, 
+    setLocationName, 
+    setLoading, 
+    setError, 
+    selectLocation,
+    selectCoords,
+    selectLocationName 
+} from '@/store/locationSlice' // Adjust path as needed
 
 // Google Maps component
 const GoogleMap = ({ onLocationSelect }) => {
@@ -20,22 +31,31 @@ const GoogleMap = ({ onLocationSelect }) => {
     const [error, setError] = React.useState(null);
     const [currentMarker, setCurrentMarker] = React.useState(null);
     const [geocoder, setGeocoder] = React.useState(null);
-    const [placesService, setPlacesService] = React.useState(null);
     const [streetView, setStreetView] = React.useState(null);
     const [isStreetViewVisible, setIsStreetViewVisible] = React.useState(false);
+    
+    // Redux state
+    const dispatch = useDispatch();
+    const coords = useSelector(selectCoords);
+    const locationName = useSelector(selectLocationName);
 
     // Load Google Maps API
     React.useEffect(() => {
         const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY;
         
         if (!apiKey) {
-            setError('Google Maps API key not found. Please set NEXT_PUBLIC_GOOGLE_MAP_KEY in your .env file.');
+            const errorMsg = 'Google Maps API key not found. Please set NEXT_PUBLIC_GOOGLE_MAP_KEY in your .env file.';
+            setError(errorMsg);
+            dispatch(setError(errorMsg));
             return;
         }
+
+        dispatch(setLoading(true));
 
         // Check if Google Maps is already loaded
         if (window.google && window.google.maps) {
             setIsLoaded(true);
+            dispatch(setLoading(false));
             return;
         }
 
@@ -46,12 +66,20 @@ const GoogleMap = ({ onLocationSelect }) => {
             const checkLoaded = setInterval(() => {
                 if (window.google && window.google.maps) {
                     setIsLoaded(true);
+                    dispatch(setLoading(false));
                     clearInterval(checkLoaded);
                 }
             }, 100);
             
             // Clear interval after 10 seconds to prevent infinite checking
-            setTimeout(() => clearInterval(checkLoaded), 10000);
+            setTimeout(() => {
+                clearInterval(checkLoaded);
+                if (!window.google || !window.google.maps) {
+                    const errorMsg = 'Timeout loading Google Maps API';
+                    setError(errorMsg);
+                    dispatch(setError(errorMsg));
+                }
+            }, 10000);
             return;
         }
 
@@ -62,21 +90,27 @@ const GoogleMap = ({ onLocationSelect }) => {
         
         script.onload = () => {
             setIsLoaded(true);
+            dispatch(setLoading(false));
         };
         
         script.onerror = () => {
-            setError('Failed to load Google Maps API');
+            const errorMsg = 'Failed to load Google Maps API';
+            setError(errorMsg);
+            dispatch(setError(errorMsg));
         };
 
         document.head.appendChild(script);
-    }, []);
+    }, [dispatch]);
 
     // Initialize map when API is loaded
     React.useEffect(() => {
         if (isLoaded && mapRef.current && !map && window.google && window.google.maps) {
             try {
+                // Use Redux coords if available, otherwise default to Springfield
+                const initialCoords = coords || { lat: 42.1015, lng: -72.5898 };
+                
                 const mapInstance = new window.google.maps.Map(mapRef.current, {
-                    center: { lat: 42.1015, lng: -72.5898 }, // Springfield, Massachusetts
+                    center: initialCoords,
                     zoom: 13,
                     mapTypeId: 'roadmap',
                     disableDefaultUI: false,
@@ -89,17 +123,13 @@ const GoogleMap = ({ onLocationSelect }) => {
                 const geocoderInstance = new window.google.maps.Geocoder();
                 setGeocoder(geocoderInstance);
                 
-                // Initialize places service if available
-                if (window.google.maps.places) {
-                    const placesServiceInstance = new window.google.maps.places.PlacesService(mapInstance);
-                    setPlacesService(placesServiceInstance);
-                }
+                // Note: PlacesService is deprecated, using Place API instead in autocomplete
                 
                 // Add initial marker
                 const initialMarker = new window.google.maps.Marker({
-                    position: { lat: 42.1015, lng: -72.5898 },
+                    position: initialCoords,
                     map: mapInstance,
-                    title: 'Springfield, Massachusetts',
+                    title: locationName || 'Selected Location',
                     draggable: true,
                     animation: window.google.maps.Animation.DROP
                 });
@@ -111,20 +141,18 @@ const GoogleMap = ({ onLocationSelect }) => {
                 setStreetView(streetViewPanorama);
 
                 // Function to update marker position and get location info
-                const updateMarkerAndLocation = (position, marker, source = 'map') => {
+                const updateMarkerAndLocation = (position, marker) => {
                     const lat = position.lat();
                     const lng = position.lng();
                     
                     // Update marker position
                     marker.setPosition(position);
                     
-                    // Animate marker only if not from street view to avoid excessive animations
-                    if (source !== 'streetview') {
-                        marker.setAnimation(window.google.maps.Animation.BOUNCE);
-                        setTimeout(() => {
-                            marker.setAnimation(null);
-                        }, 750);
-                    }
+                    // Animate marker
+                    marker.setAnimation(window.google.maps.Animation.BOUNCE);
+                    setTimeout(() => {
+                        marker.setAnimation(null);
+                    }, 750);
                     
                     // Get address from coordinates
                     geocoderInstance.geocode(
@@ -135,24 +163,32 @@ const GoogleMap = ({ onLocationSelect }) => {
                                 address = results[0].formatted_address;
                             }
                             
-                            onLocationSelect({
+                            const locationData = {
                                 lat: lat,
                                 lng: lng,
-                                address: address,
-                                source: source // Track where the update came from
-                            });
+                                address: address
+                            };
+                            
+                            // Update Redux state
+                            dispatch(setLocation({
+                                coords: { lat, lng },
+                                locationName: address
+                            }));
+                            
+                            // Also call the prop callback for local state
+                            onLocationSelect(locationData);
                         }
                     );
                 };
 
                 // Handle map clicks
                 mapInstance.addListener('click', (event) => {
-                    updateMarkerAndLocation(event.latLng, initialMarker, 'map');
+                    updateMarkerAndLocation(event.latLng, initialMarker);
                 });
 
                 // Handle marker drag
                 initialMarker.addListener('dragend', (event) => {
-                    updateMarkerAndLocation(event.latLng, initialMarker, 'marker');
+                    updateMarkerAndLocation(event.latLng, initialMarker);
                 });
 
                 // Track Street View visibility changes
@@ -165,7 +201,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                         // Update location when Street View opens
                         const position = streetViewPanorama.getPosition();
                         if (position) {
-                            updateMarkerAndLocation(position, initialMarker, 'streetview');
+                            updateMarkerAndLocation(position, initialMarker);
                         }
                     } else {
                         console.log('Street View closed');
@@ -178,7 +214,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                         const position = streetViewPanorama.getPosition();
                         if (position) {
                             // Update marker and location state when user moves in Street View
-                            updateMarkerAndLocation(position, initialMarker, 'streetview');
+                            updateMarkerAndLocation(position, initialMarker);
                             // Also center the map on the new Street View location
                             mapInstance.setCenter(position);
                         }
@@ -200,23 +236,31 @@ const GoogleMap = ({ onLocationSelect }) => {
                     }
                 });
 
-                // Set initial location
-                geocoderInstance.geocode(
-                    { location: { lat: 42.1015, lng: -72.5898 } },
-                    (results, status) => {
-                        let address = 'Springfield, Massachusetts';
-                        if (status === 'OK' && results[0]) {
-                            address = results[0].formatted_address;
+                // Set initial location in Redux if not already set
+                if (!coords) {
+                    geocoderInstance.geocode(
+                        { location: initialCoords },
+                        (results, status) => {
+                            let address = 'Springfield, Massachusetts';
+                            if (status === 'OK' && results[0]) {
+                                address = results[0].formatted_address;
+                            }
+                            
+                            dispatch(setLocation({
+                                coords: initialCoords,
+                                locationName: address
+                            }));
+                            
+                            const locationData = {
+                                lat: initialCoords.lat,
+                                lng: initialCoords.lng,
+                                address: address
+                            };
+                            
+                            onLocationSelect(locationData);
                         }
-                        
-                        onLocationSelect({
-                            lat: 42.1015,
-                            lng: -72.5898,
-                            address: address,
-                            source: 'initial'
-                        });
-                    }
-                );
+                    );
+                }
 
                 setMap(mapInstance);
                 
@@ -227,10 +271,39 @@ const GoogleMap = ({ onLocationSelect }) => {
 
             } catch (error) {
                 console.error('Error initializing map:', error);
-                setError('Failed to initialize map');
+                const errorMsg = 'Failed to initialize map';
+                setError(errorMsg);
+                dispatch(setError(errorMsg));
             }
         }
-    }, [isLoaded, map, onLocationSelect]);
+    }, [isLoaded, map, onLocationSelect, coords, locationName, dispatch]);
+
+    // Listen to Redux state changes and update map accordingly
+    React.useEffect(() => {
+        if (map && currentMarker && coords && geocoder) {
+            const currentPosition = currentMarker.getPosition();
+            const newPosition = new window.google.maps.LatLng(coords.lat, coords.lng);
+            
+            // Only update if the position actually changed (avoid infinite loops)
+            if (!currentPosition || 
+                Math.abs(currentPosition.lat() - coords.lat) > 0.000001 || 
+                Math.abs(currentPosition.lng() - coords.lng) > 0.000001) {
+                
+                // Update marker position
+                currentMarker.setPosition(newPosition);
+                
+                // Update map center
+                map.setCenter(newPosition);
+                
+                // Update marker title
+                if (locationName) {
+                    currentMarker.setTitle(locationName);
+                }
+                
+                console.log('Map updated from Redux state change');
+            }
+        }
+    }, [coords, locationName, map, currentMarker, geocoder]);
 
     // Initialize Google Places Autocomplete Element
     const initializeAutocomplete = async (mapInstance, marker, geocoderInstance) => {
@@ -268,6 +341,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                     if (place.location) {
                         const lat = place.location.lat();
                         const lng = place.location.lng();
+                        const address = place.formattedAddress || place.displayName || 'Address not available';
                         
                         mapInstance.setCenter(place.location);
                         mapInstance.setZoom(15);
@@ -278,15 +352,22 @@ const GoogleMap = ({ onLocationSelect }) => {
                             marker.setAnimation(null);
                         }, 750);
 
+                        // Update Redux state
+                        dispatch(setLocation({
+                            coords: { lat, lng },
+                            locationName: address
+                        }));
+
+                        // Also call the prop callback for local state
                         onLocationSelect({
                             lat: lat,
                             lng: lng,
-                            address: place.formattedAddress || place.displayName || 'Address not available',
-                            source: 'search'
+                            address: address
                         });
                     }
                 } catch (error) {
                     console.error('Error handling place selection:', error);
+                    dispatch(setError('Error selecting place from search'));
                 }
             });
 
@@ -320,6 +401,10 @@ const GoogleMap = ({ onLocationSelect }) => {
                             geocoderInstance.geocode({ address: address }, (results, status) => {
                                 if (status === 'OK' && results[0]) {
                                     const location = results[0].geometry.location;
+                                    const lat = location.lat();
+                                    const lng = location.lng();
+                                    const formattedAddress = results[0].formatted_address;
+                                    
                                     mapInstance.setCenter(location);
                                     mapInstance.setZoom(15);
                                     marker.setPosition(location);
@@ -328,11 +413,17 @@ const GoogleMap = ({ onLocationSelect }) => {
                                         marker.setAnimation(null);
                                     }, 750);
                                     
+                                    // Update Redux state
+                                    dispatch(setLocation({
+                                        coords: { lat, lng },
+                                        locationName: formattedAddress
+                                    }));
+                                    
+                                    // Also call the prop callback for local state
                                     onLocationSelect({
-                                        lat: location.lat(),
-                                        lng: location.lng(),
-                                        address: results[0].formatted_address,
-                                        source: 'search'
+                                        lat: lat,
+                                        lng: lng,
+                                        address: formattedAddress
                                     });
                                     
                                     e.target.value = '';
@@ -407,9 +498,27 @@ const MapDrawer = () => {
         lng: -72.5898,
         address: 'Loading...'
     });
+    
+    // Redux state and dispatch
+    const dispatch = useDispatch();
+    const location = useSelector(selectLocation);
+    const coords = useSelector(selectCoords);
+    const locationName = useSelector(selectLocationName);
+
+    // Update local state when Redux state changes
+    React.useEffect(() => {
+        if (coords && locationName) {
+            setSelectedLocation({
+                lat: coords.lat,
+                lng: coords.lng,
+                address: locationName
+            });
+        }
+    }, [coords, locationName]);
 
     const handleLocationSelect = (locationData) => {
         setSelectedLocation(locationData);
+        // Redux state is already updated in the GoogleMap component
     };
 
     const handleSaveLocation = () => {
@@ -417,8 +526,15 @@ const MapDrawer = () => {
             address: selectedLocation.address,
             latitude: selectedLocation.lat,
             longitude: selectedLocation.lng,
-            coordinates: `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`
+            coordinates: `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`,
+            reduxState: location
         });
+        
+        // Ensure Redux state is up to date
+        dispatch(setLocation({
+            coords: { lat: selectedLocation.lat, lng: selectedLocation.lng },
+            locationName: selectedLocation.address
+        }));
         
         // You can also display an alert or toast notification
         alert(`Location Saved!\n\nAddress: ${selectedLocation.address}\nCoordinates: ${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`);
@@ -450,21 +566,6 @@ const MapDrawer = () => {
                         <div className="space-y-1 text-sm">
                             <p><span className="font-medium">Address:</span> {selectedLocation.address}</p>
                             <p><span className="font-medium">Coordinates:</span> {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}</p>
-                            {selectedLocation.source && (
-                                <p><span className="font-medium">Source:</span> 
-                                    <span className={`ml-1 px-2 py-1 rounded text-xs ${
-                                        selectedLocation.source === 'streetview' ? 'bg-blue-100 text-blue-800' :
-                                        selectedLocation.source === 'search' ? 'bg-green-100 text-green-800' :
-                                        selectedLocation.source === 'marker' ? 'bg-purple-100 text-purple-800' :
-                                        'bg-gray-100 text-gray-800'
-                                    }`}>
-                                        {selectedLocation.source === 'streetview' ? 'Street View Navigation' :
-                                         selectedLocation.source === 'search' ? 'Search Result' :
-                                         selectedLocation.source === 'marker' ? 'Marker Drag' :
-                                         selectedLocation.source === 'map' ? 'Map Click' : 'Initial Location'}
-                                    </span>
-                                </p>
-                            )}
                             <p className="text-xs text-gray-500">
                                 Use search, click on map, drag marker, or navigate in Street View to update location
                             </p>
