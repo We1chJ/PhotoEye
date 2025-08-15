@@ -1,66 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader } from '@googlemaps/js-api-loader';
-
-const loader = new Loader({
-  apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY || '',
-  version: 'weekly',
-  libraries: ['places'],
-});
-
-// Generates a random Street View location
-function generateLatLong(): Promise<{ lat: number; lng: number } | null> {
-  return new Promise((resolve) => {
-    const lat = Math.random() * 180 - 90;
-    const lng = Math.random() * 360 - 180;
-
-    loader.importLibrary('streetView').then(() => {
-      const streetService = new google.maps.StreetViewService();
-      streetService.getPanorama(
-        {
-          location: { lat, lng },
-          preference: google.maps.StreetViewPreference.BEST,
-          radius: 50000,
-          sources: [google.maps.StreetViewSource.OUTDOOR],
-        },
-        (data, status) => {
-          if (status === 'OK' && data) {
-            const latO = (data.location.latLng as google.maps.LatLng).lat();
-            const lngO = (data.location.latLng as google.maps.LatLng).lng();
-            console.log(
-              `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latO},${lngO}`
-            );
-            resolve({ lat: latO, lng: lngO });
-          } else {
-            console.log('Invalid lat and long, retrying...');
-            resolve(null);
-          }
-        }
-      );
-    });
-  });
-}
-
-async function generateRandomLocation(): Promise<{ name: string; lat: number; lng: number }> {
-  let found = false;
-  let output: { lat: number; lng: number } | null = null;
-
-  console.log('Finding random location...');
-  while (!found) {
-    const data = await generateLatLong();
-    if (data) {
-      output = data;
-      found = true;
-    }
-  }
-
-  return {
-    name: 'Street View Location',
-    lat: output!.lat,
-    lng: output!.lng,
-  };
-}
+import { generateRandomLocation } from '@/utils/locationGenerator';
 
 const GamePage = () => {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -139,7 +80,7 @@ const GamePage = () => {
     console.log('Street View initialized at:', currentCoords);
   }, [isLoaded, currentCoords]);
 
-  // Handle Random Location
+  // Handle Random Location using the extracted utility function
   const handleRandomLocation = async () => {
     setIsFetchingLocation(true);
     try {
