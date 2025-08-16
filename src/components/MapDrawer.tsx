@@ -84,7 +84,6 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
     React.useEffect(() => {
         if (isLoaded && mapRef.current && !map && window.google && window.google.maps && isMounted) {
             try {
-                // Use initialLocation prop if available, otherwise default to Springfield
                 const initialCoords = initialLocation?.coords || DEFAULT_COORDINATES;
                 
                 const mapInstance = new window.google.maps.Map(mapRef.current, {

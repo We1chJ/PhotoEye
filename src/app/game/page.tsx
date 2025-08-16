@@ -40,7 +40,6 @@ const GamePage = () => {
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isUpdatingFromRedux, setIsUpdatingFromRedux] = useState(false);
-  const [lockPosition, setLockPosition] = useState(false);
   const [geocoder, setGeocoder] = useState<google.maps.Geocoder | null>(null);
   const [streetViewStatus, setStreetViewStatus] = useState<{
     type: 'success' | 'info' | 'error' | null;
@@ -168,38 +167,8 @@ const GamePage = () => {
     [dispatch, geocoder]
   );
 
-  // Function to directly set Street View position without searching
-  const setStreetViewPositionDirect = useCallback((coords: {lat: number, lng: number}) => {
-    if (!panoramaRef.current) return;
-    
-    console.log('📍 Setting Street View to exact coordinates:', coords);
-    
-    setIsUpdatingFromRedux(true);
-    setLockPosition(true); // Lock position to prevent automatic updates
-    
-    panoramaRef.current.setPosition(coords);
-    panoramaRef.current.setPov({ heading: 0, pitch: 0 });
-    panoramaRef.current.setZoom(1);
-    
-    // Update Redux with the exact coordinates
-    dispatch(setCoords(coords));
-    
-    setStreetViewStatus({ type: 'success', message: 'Street View loaded at exact location' });
-    // Clear success message after 3 seconds
-    setTimeout(() => setStreetViewStatus({ type: null, message: '' }), 3000);
-    
-    // Update location name for the exact position
-    updateLocationName(coords.lat, coords.lng);
-    
-    setTimeout(() => {
-      setIsUpdatingFromRedux(false);
-      // Keep position locked for a bit longer to prevent immediate changes
-      setTimeout(() => setLockPosition(false), 2000);
-    }, 100);
-  }, [dispatch, updateLocationName]);
-
   // Enhanced function to update Street View position with nearest search fallback
-  const updateStreetViewPositionWithFallback = useCallback((newCoords: {lat: number, lng: number}) => {
+  const updateStreetViewPosition = useCallback((newCoords: {lat: number, lng: number}) => {
     if (!panoramaRef.current) return;
     
     console.log('🔄 Finding nearest Street View to:', newCoords);
@@ -354,8 +323,8 @@ const GamePage = () => {
 
     // Event listener for position changes
     panoramaRef.current.addListener('position_changed', () => {
-      if (isUpdatingFromRedux || lockPosition) {
-        console.log('🔄 Skipping position update - updating from Redux or position is locked');
+      if (isUpdatingFromRedux) {
+        console.log('🔄 Skipping position update - updating from Redux');
         return;
       }
       
@@ -391,9 +360,9 @@ const GamePage = () => {
     });
 
     console.log('✅ Street View initialized successfully at:', currentCoords);
-  }, [isLoaded, currentCoords, dispatch, updateLocationName, isUpdatingFromRedux, lockPosition]);
+  }, [isLoaded, currentCoords, dispatch, updateLocationName, isUpdatingFromRedux]);
 
-  // Update Street View when Redux location changes - use direct positioning for received location data
+  // Update Street View when Redux location changes with availability check
   useEffect(() => {
     if (!panoramaRef.current || !currentCoords) return;
 
@@ -407,16 +376,14 @@ const GamePage = () => {
       const lngDiff = Math.abs(currentLng - currentCoords.lng);
       
       if (latDiff > tolerance || lngDiff > tolerance) {
-        console.log('🔄 Redux coordinates changed, setting Street View to exact position');
-        // Use direct positioning - no nearest search
-        setStreetViewPositionDirect(currentCoords);
+        console.log('🔄 Redux coordinates changed, updating Street View position');
+        updateStreetViewPosition(currentCoords);
       }
     } else {
-      console.log('🔄 No current position, setting Street View to exact coordinates');
-      // Use direct positioning - no nearest search
-      setStreetViewPositionDirect(currentCoords);
+      console.log('🔄 No current position, updating Street View to new coordinates');
+      updateStreetViewPosition(currentCoords);
     }
-  }, [currentCoords, setStreetViewPositionDirect]);
+  }, [currentCoords, updateStreetViewPosition]);
 
   // Handle Random Location
   const handleRandomLocation = async () => {
