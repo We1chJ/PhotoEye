@@ -22,7 +22,17 @@ import {
     selectLocation,
     selectCoords,
     selectLocationName 
-} from '@/store/locationSlice' // Adjust path as needed
+} from '@/store/locationSlice'
+import { 
+    updateMarkerAndLocation,
+    geocodeAddress,
+    createGeocoder,
+    loadGoogleMapsScript,
+    formatCoordinates,
+    DEFAULT_COORDINATES,
+    getAddressFromLatLng,
+    type LocationData
+} from '@/utils/localizer'
 
 // Google Maps component
 const GoogleMap = ({ onLocationSelect, initialLocation }) => {
@@ -59,54 +69,15 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
 
         dispatch(setLoading(true));
 
-        // Check if Google Maps is already loaded
-        if (window.google && window.google.maps) {
-            setIsLoaded(true);
-            dispatch(setLoading(false));
-            return;
-        }
-
-        // Check if script is already loading
-        const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-        if (existingScript) {
-            // If script exists but not loaded yet, wait for it
-            const checkLoaded = setInterval(() => {
-                if (window.google && window.google.maps) {
-                    setIsLoaded(true);
-                    dispatch(setLoading(false));
-                    clearInterval(checkLoaded);
-                }
-            }, 100);
-            
-            // Clear interval after 10 seconds to prevent infinite checking
-            setTimeout(() => {
-                clearInterval(checkLoaded);
-                if (!window.google || !window.google.maps) {
-                    const errorMsg = 'Timeout loading Google Maps API';
-                    setError(errorMsg);
-                    dispatch(setError(errorMsg));
-                }
-            }, 10000);
-            return;
-        }
-
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-        script.async = true;
-        script.defer = true;
-        
-        script.onload = () => {
-            setIsLoaded(true);
-            dispatch(setLoading(false));
-        };
-        
-        script.onerror = () => {
-            const errorMsg = 'Failed to load Google Maps API';
-            setError(errorMsg);
-            dispatch(setError(errorMsg));
-        };
-
-        document.head.appendChild(script);
+        loadGoogleMapsScript(apiKey)
+            .then(() => {
+                setIsLoaded(true);
+                dispatch(setLoading(false));
+            })
+            .catch((error) => {
+                setError(error.message);
+                dispatch(setError(error.message));
+            });
     }, [dispatch, isMounted]);
 
     // Initialize map when API is loaded
@@ -114,7 +85,7 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
         if (isLoaded && mapRef.current && !map && window.google && window.google.maps && isMounted) {
             try {
                 // Use initialLocation prop if available, otherwise default to Springfield
-                const initialCoords = initialLocation?.coords || { lat: 42.1015, lng: -72.5898 };
+                const initialCoords = initialLocation?.coords || DEFAULT_COORDINATES;
                 
                 const mapInstance = new window.google.maps.Map(mapRef.current, {
                     center: initialCoords,
@@ -127,7 +98,10 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
                 });
                 
                 // Initialize geocoder
-                const geocoderInstance = new window.google.maps.Geocoder();
+                const geocoderInstance = createGeocoder();
+                if (!geocoderInstance) {
+                    throw new Error('Failed to create geocoder');
+                }
                 setGeocoder(geocoderInstance);
                 
                 // Add initial marker
@@ -145,49 +119,14 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
                 const streetViewPanorama = mapInstance.getStreetView();
                 setStreetView(streetViewPanorama);
 
-                // Function to update marker position and get location info (LOCAL ONLY)
-                const updateMarkerAndLocation = (position, marker) => {
-                    const lat = position.lat();
-                    const lng = position.lng();
-                    
-                    // Update marker position
-                    marker.setPosition(position);
-                    
-                    // Animate marker
-                    marker.setAnimation(window.google.maps.Animation.BOUNCE);
-                    setTimeout(() => {
-                        marker.setAnimation(null);
-                    }, 750);
-                    
-                    // Get address from coordinates
-                    geocoderInstance.geocode(
-                        { location: position },
-                        (results, status) => {
-                            let address = 'Address not found';
-                            if (status === 'OK' && results[0]) {
-                                address = results[0].formatted_address;
-                            }
-                            
-                            const locationData = {
-                                lat: lat,
-                                lng: lng,
-                                address: address
-                            };
-                            
-                            // ONLY update local state via callback - NO Redux update here
-                            onLocationSelect(locationData);
-                        }
-                    );
-                };
-
                 // Handle map clicks
                 mapInstance.addListener('click', (event) => {
-                    updateMarkerAndLocation(event.latLng, initialMarker);
+                    updateMarkerAndLocation(geocoderInstance, event.latLng, initialMarker, onLocationSelect);
                 });
 
                 // Handle marker drag
                 initialMarker.addListener('dragend', (event) => {
-                    updateMarkerAndLocation(event.latLng, initialMarker);
+                    updateMarkerAndLocation(geocoderInstance, event.latLng, initialMarker, onLocationSelect);
                 });
 
                 // Track Street View visibility changes
@@ -200,7 +139,7 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
                         // Update location when Street View opens
                         const position = streetViewPanorama.getPosition();
                         if (position) {
-                            updateMarkerAndLocation(position, initialMarker);
+                            updateMarkerAndLocation(geocoderInstance, position, initialMarker, onLocationSelect);
                         }
                     } else {
                         console.log('Street View closed');
@@ -213,7 +152,7 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
                         const position = streetViewPanorama.getPosition();
                         if (position) {
                             // Update marker and location state when user moves in Street View
-                            updateMarkerAndLocation(position, initialMarker);
+                            updateMarkerAndLocation(geocoderInstance, position, initialMarker, onLocationSelect);
                             // Also center the map on the new Street View location
                             mapInstance.setCenter(position);
                         }
@@ -237,23 +176,11 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
 
                 // Set initial location if not provided
                 if (!initialLocation) {
-                    geocoderInstance.geocode(
-                        { location: initialCoords },
-                        (results, status) => {
-                            let address = 'Springfield, Massachusetts';
-                            if (status === 'OK' && results[0]) {
-                                address = results[0].formatted_address;
-                            }
-                            
-                            const locationData = {
-                                lat: initialCoords.lat,
-                                lng: initialCoords.lng,
-                                address: address
-                            };
-                            
-                            // Only update local state via callback
-                            onLocationSelect(locationData);
-                        }
+                    getAddressFromLatLng(
+                        geocoderInstance,
+                        DEFAULT_COORDINATES.lat,
+                        DEFAULT_COORDINATES.lng,
+                        onLocationSelect
                     );
                 }
 
@@ -362,16 +289,13 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
                     if (e.key === 'Enter' && geocoderInstance) {
                         const address = e.target.value.trim();
                         if (address) {
-                            geocoderInstance.geocode({ address: address }, (results, status) => {
-                                if (status === 'OK' && results[0]) {
-                                    const location = results[0].geometry.location;
-                                    const lat = location.lat();
-                                    const lng = location.lng();
-                                    const formattedAddress = results[0].formatted_address;
+                            geocodeAddress(geocoderInstance, address, (result) => {
+                                if (result.success && result.locationData) {
+                                    const { lat, lng, address: formattedAddress } = result.locationData;
                                     
-                                    mapInstance.setCenter(location);
+                                    mapInstance.setCenter({ lat, lng });
                                     mapInstance.setZoom(15);
-                                    marker.setPosition(location);
+                                    marker.setPosition({ lat, lng });
                                     marker.setAnimation(window.google.maps.Animation.BOUNCE);
                                     setTimeout(() => {
                                         marker.setAnimation(null);
@@ -463,9 +387,9 @@ const GoogleMap = ({ onLocationSelect, initialLocation }) => {
 
 const MapDrawer = () => {
     const [isOpen, setIsOpen] = React.useState(false);
-    const [selectedLocation, setSelectedLocation] = React.useState({
-        lat: 42.1015,
-        lng: -72.5898,
+    const [selectedLocation, setSelectedLocation] = React.useState<LocationData>({
+        lat: DEFAULT_COORDINATES.lat,
+        lng: DEFAULT_COORDINATES.lng,
         address: 'Loading...'
     });
     const [isMounted, setIsMounted] = React.useState(false);
@@ -492,7 +416,7 @@ const MapDrawer = () => {
         }
     }, [isMounted]); // Only run on mount, not on every Redux change
 
-    const handleLocationSelect = (locationData) => {
+    const handleLocationSelect = (locationData: LocationData) => {
         // Only update local state - Redux is updated only on save
         setSelectedLocation(locationData);
     };
@@ -504,7 +428,7 @@ const MapDrawer = () => {
             address: selectedLocation.address,
             latitude: selectedLocation.lat,
             longitude: selectedLocation.lng,
-            coordinates: `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`,
+            coordinates: formatCoordinates(selectedLocation.lat, selectedLocation.lng),
         });
         
         // NOW update Redux state when user explicitly saves
@@ -515,7 +439,7 @@ const MapDrawer = () => {
         
         // Show toast notification
         toast.success('Location Saved Successfully!', {
-            description: `${selectedLocation.address} (${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)})`,
+            description: `${selectedLocation.address} (${formatCoordinates(selectedLocation.lat, selectedLocation.lng)})`,
         });
         
         // Optionally close the drawer after saving
@@ -580,7 +504,7 @@ const MapDrawer = () => {
                                     Coordinates:
                                 </span>
                                 <code className="bg-gray-200 px-2 py-1 rounded text-sm font-mono">
-                                    {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                                    {formatCoordinates(selectedLocation.lat, selectedLocation.lng)}
                                 </code>
                             </div>
                             <p className="text-sm text-gray-600">

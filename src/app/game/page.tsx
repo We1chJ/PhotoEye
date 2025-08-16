@@ -14,6 +14,14 @@ import {
   selectLocationName,
   selectIsLoading
 } from '@/store/locationSlice';
+import {
+  getAddressFromLatLng,
+  createGeocoder,
+  loadGoogleMapsScript,
+  formatCoordinates,
+  DEFAULT_COORDINATES,
+  type LocationData
+} from '@/utils/localizer';
 
 // Simple debounce function
 function debounce<T extends (...args: any[]) => any>(
@@ -32,6 +40,12 @@ const GamePage = () => {
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isUpdatingFromRedux, setIsUpdatingFromRedux] = useState(false);
+  const [lockPosition, setLockPosition] = useState(false);
+  const [geocoder, setGeocoder] = useState<google.maps.Geocoder | null>(null);
+  const [streetViewStatus, setStreetViewStatus] = useState<{
+    type: 'success' | 'info' | 'error' | null;
+    message: string;
+  }>({ type: null, message: '' });
 
   // Redux state with typed hooks
   const dispatch = useAppDispatch();
@@ -46,58 +60,229 @@ const GamePage = () => {
   useEffect(() => {
     console.log('🎮 GamePage Location State:', locationState);
   }, [locationState]);
+
+  // Function to find nearest available Street View with progressive search
+  const findNearestStreetView = useCallback((coords: {lat: number, lng: number}, callback: (found: boolean, data: any, distance?: number) => void) => {
+    if (!window.google) return;
+    
+    const streetViewService = new google.maps.StreetViewService();
+    
+    // Progressive search radiuses (in meters)
+    const searchRadiuses = [50, 100, 250, 500, 1000, 2000, 5000, 10000, 25000];
+    let currentRadiusIndex = 0;
+    
+    const searchAtRadius = (radiusIndex: number) => {
+      if (radiusIndex >= searchRadiuses.length) {
+        // No Street View found within maximum radius
+        callback(false, null);
+        return;
+      }
+      
+      const radius = searchRadiuses[radiusIndex];
+      console.log(`🔍 Searching for Street View within ${radius}m of coordinates:`, coords);
+      
+      streetViewService.getPanorama({
+        location: coords,
+        radius: radius,
+        source: google.maps.StreetViewSource.OUTDOOR
+      }, (data, status) => {
+        if (status === 'OK' && data && data.location) {
+          // Calculate actual distance to found panorama
+          const foundLocation = data.location.latLng;
+          if (foundLocation) {
+            const distance = google.maps.geometry.spherical.computeDistanceBetween(
+              new google.maps.LatLng(coords.lat, coords.lng),
+              foundLocation
+            );
+            
+            console.log(`✅ Found Street View ${Math.round(distance)}m away at:`, {
+              lat: foundLocation.lat(),
+              lng: foundLocation.lng()
+            });
+            
+            callback(true, data, distance);
+          } else {
+            callback(true, data);
+          }
+        } else {
+          // Try next radius
+          console.log(`❌ No Street View found within ${radius}m, trying larger radius...`);
+          searchAtRadius(radiusIndex + 1);
+        }
+      });
+    };
+    
+    // Start searching
+    searchAtRadius(currentRadiusIndex);
+  }, []);
   
-  // Function to update location name with debouncing
+  // Function to update location name with debouncing using localizer
   const updateLocationName = useCallback(
     debounce(async (lat: number, lng: number) => {
+      if (!geocoder) {
+        console.warn('Geocoder not available');
+        return;
+      }
+
       try {
-        // Use the same geocoding logic from the utility
-        if ((window as any).google && (window as any).google.maps) {
-          const geocoder = new google.maps.Geocoder();
-          geocoder.geocode(
-            { location: { lat, lng } },
-            (results, status) => {
-              if (status === 'OK' && results && results.length > 0) {
-                const result = results[0];
-                const addressComponents = result.address_components;
-                let placeName = '';
+        console.log('🔄 Updating location name for:', { lat, lng });
+        
+        // Use the localizer function instead of inline geocoding
+        getAddressFromLatLng(geocoder, lat, lng, (locationData: LocationData) => {
+          console.log('📍 Received location data:', locationData);
+          
+          // Extract a cleaner place name from the full address
+          const fullAddress = locationData.address;
+          let placeName = '';
 
-                const priorities = ['locality', 'administrative_area_level_1', 'country'];
-
-                for (const priority of priorities) {
-                  const component = addressComponents.find(comp =>
-                    comp.types.includes(priority)
-                  );
-                  if (component) {
-                    placeName = component.long_name;
-                    break;
-                  }
-                }
-
-                if (placeName && !priorities.includes('country')) {
-                  const countryComponent = addressComponents.find(comp =>
-                    comp.types.includes('country')
-                  );
-                  if (countryComponent && countryComponent.long_name !== placeName) {
-                    placeName += `, ${countryComponent.long_name}`;
-                  }
-                }
-
-                const finalPlaceName = placeName || 'Unknown Place';
-
-                // Only update location name, not coords (coords already updated immediately)
-                dispatch(setLocationName(finalPlaceName));
+          // Try to get a more user-friendly name by parsing the address
+          if (fullAddress && fullAddress !== 'Address not found') {
+            const addressParts = fullAddress.split(',').map(part => part.trim());
+            
+            // Try to find the most relevant part (usually city, then state/country)
+            if (addressParts.length >= 2) {
+              // Use the second-to-last part as the primary location (usually city)
+              placeName = addressParts[addressParts.length - 2];
+              
+              // Add country if different from the city name
+              const country = addressParts[addressParts.length - 1];
+              if (country && country !== placeName) {
+                placeName += `, ${country}`;
               }
+            } else {
+              // Fallback to the full address
+              placeName = fullAddress;
             }
-          );
-        }
+          } else {
+            placeName = 'Unknown Place';
+          }
+
+          console.log('✅ Setting location name to:', placeName);
+          dispatch(setLocationName(placeName));
+        });
       } catch (error) {
         console.error('Error updating location name:', error);
         dispatch(setError('Failed to get location name'));
       }
-    }, 1000), // Debounce for 1 second
-    [dispatch]
+    }, 1000),
+    [dispatch, geocoder]
   );
+
+  // Function to directly set Street View position without searching
+  const setStreetViewPositionDirect = useCallback((coords: {lat: number, lng: number}) => {
+    if (!panoramaRef.current) return;
+    
+    console.log('📍 Setting Street View to exact coordinates:', coords);
+    
+    setIsUpdatingFromRedux(true);
+    setLockPosition(true); // Lock position to prevent automatic updates
+    
+    panoramaRef.current.setPosition(coords);
+    panoramaRef.current.setPov({ heading: 0, pitch: 0 });
+    panoramaRef.current.setZoom(1);
+    
+    // Update Redux with the exact coordinates
+    dispatch(setCoords(coords));
+    
+    setStreetViewStatus({ type: 'success', message: 'Street View loaded at exact location' });
+    // Clear success message after 3 seconds
+    setTimeout(() => setStreetViewStatus({ type: null, message: '' }), 3000);
+    
+    // Update location name for the exact position
+    updateLocationName(coords.lat, coords.lng);
+    
+    setTimeout(() => {
+      setIsUpdatingFromRedux(false);
+      // Keep position locked for a bit longer to prevent immediate changes
+      setTimeout(() => setLockPosition(false), 2000);
+    }, 100);
+  }, [dispatch, updateLocationName]);
+
+  // Enhanced function to update Street View position with nearest search fallback
+  const updateStreetViewPositionWithFallback = useCallback((newCoords: {lat: number, lng: number}) => {
+    if (!panoramaRef.current) return;
+    
+    console.log('🔄 Finding nearest Street View to:', newCoords);
+    
+    findNearestStreetView(newCoords, (found, data, distance) => {
+      if (found && data && panoramaRef.current) {
+        const actualLocation = data.location?.latLng;
+        if (actualLocation) {
+          const actualCoords = {
+            lat: actualLocation.lat(),
+            lng: actualLocation.lng()
+          };
+          
+          setIsUpdatingFromRedux(true);
+          
+          panoramaRef.current.setPosition(actualCoords);
+          panoramaRef.current.setPov({ heading: 0, pitch: 0 });
+          panoramaRef.current.setZoom(1);
+          
+          // Update Redux with the actual coordinates
+          dispatch(setCoords(actualCoords));
+          
+          // Show message if we moved significantly from original coordinates
+          if (distance && distance > 100) {
+            const distanceKm = (distance / 1000).toFixed(1);
+            setStreetViewStatus({
+              type: 'info',
+              message: `Moved to nearest Street View (${distanceKm}km away)`
+            });
+            console.log(`📍 Moved ${Math.round(distance)}m from original coordinates`);
+          } else {
+            setStreetViewStatus({ type: 'success', message: 'Street View loaded successfully' });
+            // Clear success message after 3 seconds
+            setTimeout(() => setStreetViewStatus({ type: null, message: '' }), 3000);
+          }
+          
+          // Update location name for the actual position
+          updateLocationName(actualCoords.lat, actualCoords.lng);
+          
+          setTimeout(() => setIsUpdatingFromRedux(false), 100);
+        }
+      } else {
+        console.log('❌ No Street View found within 25km radius');
+        setStreetViewStatus({
+          type: 'error',
+          message: 'No Street View available within 25km of this location'
+        });
+      }
+    });
+  }, [findNearestStreetView, dispatch, updateLocationName]);
+
+  // Load Google Maps script using localizer utility
+  useEffect(() => {
+    if (!apiKey) {
+      const errorMsg = 'Google Maps API key not found. Please set NEXT_PUBLIC_GOOGLE_MAP_KEY in your .env file.';
+      dispatch(setError(errorMsg));
+      return;
+    }
+
+    dispatch(setLoading(true));
+
+    loadGoogleMapsScript(apiKey, ['geometry']) // Add geometry library for distance calculations
+      .then(() => {
+        console.log('✅ Google Maps script loaded successfully');
+        setIsLoaded(true);
+        
+        // Create geocoder instance using localizer utility
+        const geocoderInstance = createGeocoder();
+        if (geocoderInstance) {
+          setGeocoder(geocoderInstance);
+          console.log('✅ Geocoder instance created successfully');
+        } else {
+          console.warn('⚠️ Failed to create geocoder instance');
+        }
+        
+        dispatch(setLoading(false));
+      })
+      .catch((error) => {
+        console.error('❌ Failed to load Google Maps:', error);
+        dispatch(setError('Failed to load Google Maps'));
+        dispatch(setLoading(false));
+      });
+  }, [apiKey, dispatch]);
 
   // Get user's current location
   useEffect(() => {
@@ -110,70 +295,69 @@ const GamePage = () => {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           };
+          console.log('📍 Got user location:', coords);
           dispatch(setCoords(coords));
           dispatch(setLoading(false));
-
-          // Get location name for initial position
           updateLocationName(coords.lat, coords.lng);
         },
         (error) => {
-          console.error('Error getting location:', error);
+          console.error('❌ Error getting location:', error);
           dispatch(setError('Failed to get current location'));
           dispatch(setLoading(false));
+          
+          // Fallback to default coordinates
+          console.log('📍 Using default coordinates:', DEFAULT_COORDINATES);
+          dispatch(setCoords(DEFAULT_COORDINATES));
+          updateLocationName(DEFAULT_COORDINATES.lat, DEFAULT_COORDINATES.lng);
         }
       );
     } else {
-      console.warn('Geolocation not supported');
+      console.warn('⚠️ Geolocation not supported');
       dispatch(setError('Geolocation not supported'));
       dispatch(setLoading(false));
+      
+      // Fallback to default coordinates
+      console.log('📍 Using default coordinates:', DEFAULT_COORDINATES);
+      dispatch(setCoords(DEFAULT_COORDINATES));
+      updateLocationName(DEFAULT_COORDINATES.lat, DEFAULT_COORDINATES.lng);
     }
   }, [dispatch, updateLocationName]);
 
-  // Load Google Maps script
-  useEffect(() => {
-    if (!apiKey) return;
-
-    if ((window as any).google) {
-      setIsLoaded(true);
-      return;
-    }
-
-    if (document.querySelector('script[src*="maps.googleapis.com"]')) return;
-
-    (window as any).initGoogleMaps = () => setIsLoaded(true);
-
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initGoogleMaps`;
-    script.async = true;
-    script.defer = true;
-    script.onerror = () => console.error('Failed to load Google Maps script');
-    document.head.appendChild(script);
-
-    return () => {
-      delete (window as any).initGoogleMaps;
-    };
-  }, [apiKey]);
-
-  // Initialize Street View
+  // Initialize Street View with event listeners
   useEffect(() => {
     if (!isLoaded || !currentCoords || !mapRef.current) return;
     if (panoramaRef.current) return; // already initialized
+
+    console.log('🎮 Initializing Street View at:', currentCoords);
 
     panoramaRef.current = new google.maps.StreetViewPanorama(mapRef.current, {
       position: currentCoords,
       pov: { heading: 0, pitch: 0 },
       zoom: 1,
-      linksControl: true, // Enable navigation links
-      panControl: true,   // Enable pan control
-      zoomControl: true,  // Enable zoom control
+      linksControl: true,
+      panControl: true,
+      zoomControl: true,
       fullscreenControl: false,
       enableCloseButton: false,
     });
 
-    // Add event listener to track position changes
+    // Event listener for successful panorama load
+    panoramaRef.current.addListener('pano_changed', () => {
+      console.log('📷 Panorama changed - new imagery loaded');
+      const panoId = panoramaRef.current?.getPano();
+      if (panoId) {
+        console.log('✅ Street View loaded successfully, pano ID:', panoId);
+        // Clear any previous error status
+        setStreetViewStatus({ type: null, message: '' });
+      }
+    });
+
+    // Event listener for position changes
     panoramaRef.current.addListener('position_changed', () => {
-      // Skip updating Redux if we're currently updating from Redux to prevent loops
-      if (isUpdatingFromRedux) return;
+      if (isUpdatingFromRedux || lockPosition) {
+        console.log('🔄 Skipping position update - updating from Redux or position is locked');
+        return;
+      }
       
       if (panoramaRef.current) {
         const newPosition = panoramaRef.current.getPosition();
@@ -183,71 +367,76 @@ const GamePage = () => {
             lng: newPosition.lng()
           };
 
-          // Update coordinates immediately
+          console.log('📍 Street View position changed to:', newCoords);
           dispatch(setCoords(newCoords));
-          console.log('Position changed to:', newCoords);
-
-          // Update location name (debounced) - this won't update coords again
           updateLocationName(newCoords.lat, newCoords.lng);
         }
       }
     });
 
-    console.log('Street View initialized at:', currentCoords);
-  }, [isLoaded, currentCoords, dispatch, updateLocationName, isUpdatingFromRedux]);
+    // Event listener for status changes
+    panoramaRef.current.addListener('status_changed', () => {
+      if (panoramaRef.current) {
+        const status = panoramaRef.current.getStatus();
+        console.log('🔄 Street View status changed:', status);
+        
+        if (status !== 'OK') {
+          console.log('❌ Street View error:', status);
+          setStreetViewStatus({
+            type: 'error',
+            message: `Street View unavailable: ${status}`
+          });
+        }
+      }
+    });
 
-  // Update Street View when Redux location changes
+    console.log('✅ Street View initialized successfully at:', currentCoords);
+  }, [isLoaded, currentCoords, dispatch, updateLocationName, isUpdatingFromRedux, lockPosition]);
+
+  // Update Street View when Redux location changes - use direct positioning for received location data
   useEffect(() => {
     if (!panoramaRef.current || !currentCoords) return;
 
-    // Get current panorama position to compare
     const currentPosition = panoramaRef.current.getPosition();
     if (currentPosition) {
       const currentLat = currentPosition.lat();
       const currentLng = currentPosition.lng();
       
-      // Only update if the position is actually different (with small tolerance for floating point precision)
       const tolerance = 0.000001;
       const latDiff = Math.abs(currentLat - currentCoords.lat);
       const lngDiff = Math.abs(currentLng - currentCoords.lng);
       
       if (latDiff > tolerance || lngDiff > tolerance) {
-        console.log('🔄 Updating Street View from Redux state change:', currentCoords);
-        
-        // Set flag to prevent circular updates
-        setIsUpdatingFromRedux(true);
-        
-        // Update the Street View position
-        panoramaRef.current.setPosition(currentCoords);
-        panoramaRef.current.setPov({ heading: 0, pitch: 0 });
-        panoramaRef.current.setZoom(1);
-        
-        // Reset the flag after a short delay to allow the position_changed event to fire
-        setTimeout(() => {
-          setIsUpdatingFromRedux(false);
-        }, 100);
+        console.log('🔄 Redux coordinates changed, setting Street View to exact position');
+        // Use direct positioning - no nearest search
+        setStreetViewPositionDirect(currentCoords);
       }
+    } else {
+      console.log('🔄 No current position, setting Street View to exact coordinates');
+      // Use direct positioning - no nearest search
+      setStreetViewPositionDirect(currentCoords);
     }
-  }, [currentCoords]);
+  }, [currentCoords, setStreetViewPositionDirect]);
 
-  // Handle Random Location using the extracted utility function
+  // Handle Random Location
   const handleRandomLocation = async () => {
+    console.log('🎲 Generating random location...');
     dispatch(setLoading(true));
+    
     try {
       const { name, lat, lng } = await generateRandomLocation();
-      console.log('Random location:', name, lat, lng);
+      console.log('🎲 Random location generated:', { name, lat, lng });
 
       const newCoords = { lat, lng };
 
-      // Update Redux store
       dispatch(setLocation({
         coords: newCoords,
         locationName: name
       }));
-
-      // The Street View will be updated automatically by the useEffect above
+      
+      console.log('✅ Random location set in Redux');
     } catch (error) {
-      console.error('Failed to generate random location:', error);
+      console.error('❌ Failed to generate random location:', error);
       dispatch(setError('Failed to generate random location'));
     } finally {
       dispatch(setLoading(false));
@@ -258,15 +447,39 @@ const GamePage = () => {
     <div className="w-full h-full relative">
       <div ref={mapRef} className="absolute inset-0 w-full h-full bg-gray-100" />
 
+      {/* Street View Status Message */}
+      {streetViewStatus.type && (
+        <div className={`absolute top-16 left-1/2 transform -translate-x-1/2 z-20 px-4 py-2 rounded-md shadow-md max-w-sm text-center ${
+          streetViewStatus.type === 'error' 
+            ? 'bg-red-100 text-red-800 border border-red-200'
+            : streetViewStatus.type === 'info'
+            ? 'bg-blue-100 text-blue-800 border border-blue-200'
+            : 'bg-green-100 text-green-800 border border-green-200'
+        }`}>
+          <div className="text-sm">{streetViewStatus.message}</div>
+          {streetViewStatus.type === 'info' && (
+            <button
+              onClick={() => setStreetViewStatus({ type: null, message: '' })}
+              className="ml-2 text-xs underline hover:no-underline"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Display location name and coordinates */}
       {locationName && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-white bg-opacity-90 px-4 py-2 rounded-md shadow-md">
-          <div className="font-semibold">{locationName}</div>
-          {currentCoords && (
-            <div className="text-xs text-gray-600 mt-1">
-              {currentCoords.lat.toFixed(6)}, {currentCoords.lng.toFixed(6)}
-            </div>
-          )}
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 bg-black/20 backdrop-blur-md border border-white/30 px-6 py-4 rounded-xl shadow-lg">
+          <div className="text-center">
+            <div className="text-white/80 text-sm font-medium mb-1">You are at:</div>
+            <div className="font-bold text-white text-lg mb-2">{locationName}</div>
+            {currentCoords && (
+              <div className="text-white/70 text-xs font-mono bg-black/20 px-3 py-1 rounded-full">
+                {formatCoordinates(currentCoords.lat, currentCoords.lng)}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
