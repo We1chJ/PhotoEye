@@ -31,6 +31,7 @@ const GamePage = () => {
   const mapRef = useRef<HTMLDivElement>(null);
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isUpdatingFromRedux, setIsUpdatingFromRedux] = useState(false);
 
   // Redux state with typed hooks
   const dispatch = useAppDispatch();
@@ -40,7 +41,6 @@ const GamePage = () => {
   const isFetchingLocation = useAppSelector(selectIsLoading);
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY;
-
 
   const locationState = useAppSelector(state => state.location);
   useEffect(() => {
@@ -172,6 +172,9 @@ const GamePage = () => {
 
     // Add event listener to track position changes
     panoramaRef.current.addListener('position_changed', () => {
+      // Skip updating Redux if we're currently updating from Redux to prevent loops
+      if (isUpdatingFromRedux) return;
+      
       if (panoramaRef.current) {
         const newPosition = panoramaRef.current.getPosition();
         if (newPosition) {
@@ -191,7 +194,41 @@ const GamePage = () => {
     });
 
     console.log('Street View initialized at:', currentCoords);
-  }, [isLoaded, currentCoords, dispatch, updateLocationName]);
+  }, [isLoaded, currentCoords, dispatch, updateLocationName, isUpdatingFromRedux]);
+
+  // Update Street View when Redux location changes
+  useEffect(() => {
+    if (!panoramaRef.current || !currentCoords) return;
+
+    // Get current panorama position to compare
+    const currentPosition = panoramaRef.current.getPosition();
+    if (currentPosition) {
+      const currentLat = currentPosition.lat();
+      const currentLng = currentPosition.lng();
+      
+      // Only update if the position is actually different (with small tolerance for floating point precision)
+      const tolerance = 0.000001;
+      const latDiff = Math.abs(currentLat - currentCoords.lat);
+      const lngDiff = Math.abs(currentLng - currentCoords.lng);
+      
+      if (latDiff > tolerance || lngDiff > tolerance) {
+        console.log('🔄 Updating Street View from Redux state change:', currentCoords);
+        
+        // Set flag to prevent circular updates
+        setIsUpdatingFromRedux(true);
+        
+        // Update the Street View position
+        panoramaRef.current.setPosition(currentCoords);
+        panoramaRef.current.setPov({ heading: 0, pitch: 0 });
+        panoramaRef.current.setZoom(1);
+        
+        // Reset the flag after a short delay to allow the position_changed event to fire
+        setTimeout(() => {
+          setIsUpdatingFromRedux(false);
+        }, 100);
+      }
+    }
+  }, [currentCoords]);
 
   // Handle Random Location using the extracted utility function
   const handleRandomLocation = async () => {
@@ -208,11 +245,7 @@ const GamePage = () => {
         locationName: name
       }));
 
-      if (panoramaRef.current) {
-        panoramaRef.current.setPosition(newCoords);
-        panoramaRef.current.setPov({ heading: 0, pitch: 0 });
-        panoramaRef.current.setZoom(1);
-      }
+      // The Street View will be updated automatically by the useEffect above
     } catch (error) {
       console.error('Failed to generate random location:', error);
       dispatch(setError('Failed to generate random location'));

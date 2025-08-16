@@ -567,7 +567,7 @@ const MapDrawer = () => {
         
         // Show toast notification only when save button is clicked
         toast.success('Location Saved Successfully!', {
-            description: `${selectedLocation.address}`,
+            description: `${selectedLocation.address} (${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)})`,
         });
         
         // Optionally close the drawer after saving
