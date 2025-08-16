@@ -10,8 +10,9 @@ import {
     DrawerTitle,
 } from "@/components/ui/drawer"
 import { Button } from './ui/button'
-import { Map } from 'lucide-react'
+import { Map, MapPin, Search, Navigation, Globe } from 'lucide-react'
 import { SidebarMenuButton } from './ui/sidebar'
+import { toast } from 'sonner'
 import { 
     setLocation, 
     setCoords, 
@@ -33,14 +34,22 @@ const GoogleMap = ({ onLocationSelect }) => {
     const [geocoder, setGeocoder] = React.useState(null);
     const [streetView, setStreetView] = React.useState(null);
     const [isStreetViewVisible, setIsStreetViewVisible] = React.useState(false);
+    const [isMounted, setIsMounted] = React.useState(false);
     
     // Redux state
     const dispatch = useDispatch();
     const coords = useSelector(selectCoords);
     const locationName = useSelector(selectLocationName);
 
+    // Handle mounting to prevent hydration issues
+    React.useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
     // Load Google Maps API
     React.useEffect(() => {
+        if (!isMounted) return;
+        
         const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY;
         
         if (!apiKey) {
@@ -100,11 +109,11 @@ const GoogleMap = ({ onLocationSelect }) => {
         };
 
         document.head.appendChild(script);
-    }, [dispatch]);
+    }, [dispatch, isMounted]);
 
     // Initialize map when API is loaded
     React.useEffect(() => {
-        if (isLoaded && mapRef.current && !map && window.google && window.google.maps) {
+        if (isLoaded && mapRef.current && !map && window.google && window.google.maps && isMounted) {
             try {
                 // Use Redux coords if available, otherwise default to Springfield
                 const initialCoords = coords || { lat: 42.1015, lng: -72.5898 };
@@ -122,8 +131,6 @@ const GoogleMap = ({ onLocationSelect }) => {
                 // Initialize geocoder
                 const geocoderInstance = new window.google.maps.Geocoder();
                 setGeocoder(geocoderInstance);
-                
-                // Note: PlacesService is deprecated, using Place API instead in autocomplete
                 
                 // Add initial marker
                 const initialMarker = new window.google.maps.Marker({
@@ -276,11 +283,11 @@ const GoogleMap = ({ onLocationSelect }) => {
                 dispatch(setError(errorMsg));
             }
         }
-    }, [isLoaded, map, onLocationSelect, coords, locationName, dispatch]);
+    }, [isLoaded, map, onLocationSelect, coords, locationName, dispatch, isMounted]);
 
     // Listen to Redux state changes and update map accordingly
     React.useEffect(() => {
-        if (map && currentMarker && coords && geocoder) {
+        if (map && currentMarker && coords && geocoder && isMounted) {
             const currentPosition = currentMarker.getPosition();
             const newPosition = new window.google.maps.LatLng(coords.lat, coords.lng);
             
@@ -303,10 +310,12 @@ const GoogleMap = ({ onLocationSelect }) => {
                 console.log('Map updated from Redux state change');
             }
         }
-    }, [coords, locationName, map, currentMarker, geocoder]);
+    }, [coords, locationName, map, currentMarker, geocoder, isMounted]);
 
     // Initialize Google Places Autocomplete Element
     const initializeAutocomplete = async (mapInstance, marker, geocoderInstance) => {
+        if (!isMounted) return;
+        
         try {
             // Check if Places library is available
             if (!window.google || !window.google.maps || !window.google.maps.importLibrary) {
@@ -427,8 +436,6 @@ const GoogleMap = ({ onLocationSelect }) => {
                                     });
                                     
                                     e.target.value = '';
-                                } else {
-                                    alert('Location not found. Please try a different search term.');
                                 }
                             });
                         }
@@ -437,6 +444,17 @@ const GoogleMap = ({ onLocationSelect }) => {
             }
         }
     };
+
+    if (!isMounted) {
+        return (
+            <div className="flex items-center justify-center h-96 bg-gray-100 rounded-lg">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+                    <p className="text-sm text-gray-600">Initializing...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (error) {
         return (
@@ -464,18 +482,21 @@ const GoogleMap = ({ onLocationSelect }) => {
     return (
         <div className="flex flex-col h-full">
             {/* Top Search Bar */}
-            <div className="flex-shrink-0 p-4 border-b bg-white">
+            <div className="flex-shrink-0 p-4">
                 <div
                     id="top-search-card"
                     className="w-full bg-gray-50 rounded-lg p-2"
                 >
-                    <div className="text-sm text-gray-600 mb-2">Search for places...</div>
+                    <div className="text-sm text-gray-600 mb-2 flex items-center gap-2">
+                        <Search className="h-4 w-4" />
+                        Search for places...
+                    </div>
                 </div>
                 
                 {/* Street View Status Indicator */}
                 {isStreetViewVisible && (
                     <div className="mt-2 px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full inline-flex items-center">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></div>
+                        <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
                         Street View Active - Location updates as you navigate
                     </div>
                 )}
@@ -498,6 +519,7 @@ const MapDrawer = () => {
         lng: -72.5898,
         address: 'Loading...'
     });
+    const [isMounted, setIsMounted] = React.useState(false);
     
     // Redux state and dispatch
     const dispatch = useDispatch();
@@ -505,16 +527,21 @@ const MapDrawer = () => {
     const coords = useSelector(selectCoords);
     const locationName = useSelector(selectLocationName);
 
+    // Handle mounting to prevent hydration issues
+    React.useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
     // Update local state when Redux state changes
     React.useEffect(() => {
-        if (coords && locationName) {
+        if (coords && locationName && isMounted) {
             setSelectedLocation({
                 lat: coords.lat,
                 lng: coords.lng,
                 address: locationName
             });
         }
-    }, [coords, locationName]);
+    }, [coords, locationName, isMounted]);
 
     const handleLocationSelect = (locationData) => {
         setSelectedLocation(locationData);
@@ -522,6 +549,8 @@ const MapDrawer = () => {
     };
 
     const handleSaveLocation = () => {
+        if (!isMounted) return;
+        
         console.log('Final Confirmed Location:', {
             address: selectedLocation.address,
             latitude: selectedLocation.lat,
@@ -536,12 +565,25 @@ const MapDrawer = () => {
             locationName: selectedLocation.address
         }));
         
-        // You can also display an alert or toast notification
-        alert(`Location Saved!\n\nAddress: ${selectedLocation.address}\nCoordinates: ${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`);
+        // Show toast notification only when save button is clicked
+        toast.success('Location Saved Successfully!', {
+            description: `${selectedLocation.address}`,
+        });
         
         // Optionally close the drawer after saving
         setIsOpen(false);
     };
+
+    if (!isMounted) {
+        return (
+            <SidebarMenuButton asChild tooltip="Map">
+                <a href="#" className="flex items-center gap-2">
+                    <Map />
+                    <span>Map</span>
+                </a>
+            </SidebarMenuButton>
+        );
+    }
 
     return (
         <Drawer direction='left' dismissible={false} open={isOpen} onOpenChange={setIsOpen}>
@@ -553,40 +595,60 @@ const MapDrawer = () => {
             </SidebarMenuButton>
             <DrawerContent className="!w-3/4 !max-w-none h-[90vh] flex flex-col">
                 <DrawerHeader className="flex-shrink-0">
-                    <DrawerTitle>Map View</DrawerTitle>
-                    <DrawerDescription>Search, navigate and select your location on the map using the search bar above the map.</DrawerDescription>
+                    <DrawerTitle className="text-2xl font-bold">
+                        Interactive World Map
+                    </DrawerTitle>
+                    <DrawerDescription className="text-base text-gray-700">
+                        Search for places, click anywhere on the map, drag the marker around, or dive into Street View to explore and select your location.
+                    </DrawerDescription>
                 </DrawerHeader>
                 
                 <div className="flex-1 flex flex-col overflow-hidden">
                     <GoogleMap onLocationSelect={handleLocationSelect} />
                     
                     {/* Location Display */}
-                    <div className="flex-shrink-0 p-4 bg-gray-50 border-t">
-                        <h3 className="font-medium text-gray-900 mb-2">Selected Location</h3>
-                        <div className="space-y-1 text-sm">
-                            <p><span className="font-medium">Address:</span> {selectedLocation.address}</p>
-                            <p><span className="font-medium">Coordinates:</span> {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}</p>
-                            <p className="text-xs text-gray-500">
-                                Use search, click on map, drag marker, or navigate in Street View to update location
+                    <div className="flex-shrink-0 p-4">
+                        <h3 className="font-bold text-gray-900 mb-3 text-lg">
+                            Your Selected Location
+                        </h3>
+                        <div className="space-y-2">
+                            <div className="flex items-start gap-2">
+                                <span className="font-semibold text-blue-600">
+                                    Address:
+                                </span>
+                                <span className="text-gray-800 font-medium">{selectedLocation.address}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="font-semibold text-green-600">
+                                    Coordinates:
+                                </span>
+                                <code className="bg-gray-200 px-2 py-1 rounded text-sm font-mono">
+                                    {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                                </code>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                                Use search, click on map, drag marker, or navigate in Street View to update location.
                             </p>
                         </div>
                     </div>
                 </div>
                 
                 <DrawerFooter className="flex-shrink-0">
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                         <Button
                             onClick={handleSaveLocation}
-                            className="bg-green-600 hover:bg-green-700 text-white w-1/2"
+                            className="w-1/2 flex items-center gap-2"
                         >
                             Save Location
+                            <MapPin className="h-4 w-4" />
                         </Button>
                         <Button
                             variant="outline"
                             onClick={() => setIsOpen(false)}
-                            className="w-1/2"
+                            className="w-1/2 flex items-center gap-2"
                         >
                             Close
+                            <Navigation className="h-4 w-4" />
                         </Button>
                     </div>
                 </DrawerFooter>
