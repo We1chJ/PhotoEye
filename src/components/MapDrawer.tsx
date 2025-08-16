@@ -25,7 +25,7 @@ import {
 } from '@/store/locationSlice' // Adjust path as needed
 
 // Google Maps component
-const GoogleMap = ({ onLocationSelect }) => {
+const GoogleMap = ({ onLocationSelect, initialLocation }) => {
     const mapRef = React.useRef(null);
     const [map, setMap] = React.useState(null);
     const [isLoaded, setIsLoaded] = React.useState(false);
@@ -36,10 +36,8 @@ const GoogleMap = ({ onLocationSelect }) => {
     const [isStreetViewVisible, setIsStreetViewVisible] = React.useState(false);
     const [isMounted, setIsMounted] = React.useState(false);
     
-    // Redux state
+    // Redux dispatch (only for loading/error states)
     const dispatch = useDispatch();
-    const coords = useSelector(selectCoords);
-    const locationName = useSelector(selectLocationName);
 
     // Handle mounting to prevent hydration issues
     React.useEffect(() => {
@@ -115,8 +113,8 @@ const GoogleMap = ({ onLocationSelect }) => {
     React.useEffect(() => {
         if (isLoaded && mapRef.current && !map && window.google && window.google.maps && isMounted) {
             try {
-                // Use Redux coords if available, otherwise default to Springfield
-                const initialCoords = coords || { lat: 42.1015, lng: -72.5898 };
+                // Use initialLocation prop if available, otherwise default to Springfield
+                const initialCoords = initialLocation?.coords || { lat: 42.1015, lng: -72.5898 };
                 
                 const mapInstance = new window.google.maps.Map(mapRef.current, {
                     center: initialCoords,
@@ -136,7 +134,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                 const initialMarker = new window.google.maps.Marker({
                     position: initialCoords,
                     map: mapInstance,
-                    title: locationName || 'Selected Location',
+                    title: initialLocation?.locationName || 'Selected Location',
                     draggable: true,
                     animation: window.google.maps.Animation.DROP
                 });
@@ -147,7 +145,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                 const streetViewPanorama = mapInstance.getStreetView();
                 setStreetView(streetViewPanorama);
 
-                // Function to update marker position and get location info
+                // Function to update marker position and get location info (LOCAL ONLY)
                 const updateMarkerAndLocation = (position, marker) => {
                     const lat = position.lat();
                     const lng = position.lng();
@@ -176,13 +174,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                                 address: address
                             };
                             
-                            // Update Redux state
-                            dispatch(setLocation({
-                                coords: { lat, lng },
-                                locationName: address
-                            }));
-                            
-                            // Also call the prop callback for local state
+                            // ONLY update local state via callback - NO Redux update here
                             onLocationSelect(locationData);
                         }
                     );
@@ -243,8 +235,8 @@ const GoogleMap = ({ onLocationSelect }) => {
                     }
                 });
 
-                // Set initial location in Redux if not already set
-                if (!coords) {
+                // Set initial location if not provided
+                if (!initialLocation) {
                     geocoderInstance.geocode(
                         { location: initialCoords },
                         (results, status) => {
@@ -253,17 +245,13 @@ const GoogleMap = ({ onLocationSelect }) => {
                                 address = results[0].formatted_address;
                             }
                             
-                            dispatch(setLocation({
-                                coords: initialCoords,
-                                locationName: address
-                            }));
-                            
                             const locationData = {
                                 lat: initialCoords.lat,
                                 lng: initialCoords.lng,
                                 address: address
                             };
                             
+                            // Only update local state via callback
                             onLocationSelect(locationData);
                         }
                     );
@@ -283,34 +271,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                 dispatch(setError(errorMsg));
             }
         }
-    }, [isLoaded, map, onLocationSelect, coords, locationName, dispatch, isMounted]);
-
-    // Listen to Redux state changes and update map accordingly
-    React.useEffect(() => {
-        if (map && currentMarker && coords && geocoder && isMounted) {
-            const currentPosition = currentMarker.getPosition();
-            const newPosition = new window.google.maps.LatLng(coords.lat, coords.lng);
-            
-            // Only update if the position actually changed (avoid infinite loops)
-            if (!currentPosition || 
-                Math.abs(currentPosition.lat() - coords.lat) > 0.000001 || 
-                Math.abs(currentPosition.lng() - coords.lng) > 0.000001) {
-                
-                // Update marker position
-                currentMarker.setPosition(newPosition);
-                
-                // Update map center
-                map.setCenter(newPosition);
-                
-                // Update marker title
-                if (locationName) {
-                    currentMarker.setTitle(locationName);
-                }
-                
-                console.log('Map updated from Redux state change');
-            }
-        }
-    }, [coords, locationName, map, currentMarker, geocoder, isMounted]);
+    }, [isLoaded, map, onLocationSelect, initialLocation, dispatch, isMounted]);
 
     // Initialize Google Places Autocomplete Element
     const initializeAutocomplete = async (mapInstance, marker, geocoderInstance) => {
@@ -361,13 +322,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                             marker.setAnimation(null);
                         }, 750);
 
-                        // Update Redux state
-                        dispatch(setLocation({
-                            coords: { lat, lng },
-                            locationName: address
-                        }));
-
-                        // Also call the prop callback for local state
+                        // ONLY update local state via callback - NO Redux update here
                         onLocationSelect({
                             lat: lat,
                             lng: lng,
@@ -422,13 +377,7 @@ const GoogleMap = ({ onLocationSelect }) => {
                                         marker.setAnimation(null);
                                     }, 750);
                                     
-                                    // Update Redux state
-                                    dispatch(setLocation({
-                                        coords: { lat, lng },
-                                        locationName: formattedAddress
-                                    }));
-                                    
-                                    // Also call the prop callback for local state
+                                    // ONLY update local state via callback - NO Redux update here
                                     onLocationSelect({
                                         lat: lat,
                                         lng: lng,
@@ -532,7 +481,7 @@ const MapDrawer = () => {
         setIsMounted(true);
     }, []);
 
-    // Update local state when Redux state changes
+    // Initialize selectedLocation with Redux state when component mounts
     React.useEffect(() => {
         if (coords && locationName && isMounted) {
             setSelectedLocation({
@@ -541,11 +490,11 @@ const MapDrawer = () => {
                 address: locationName
             });
         }
-    }, [coords, locationName, isMounted]);
+    }, [isMounted]); // Only run on mount, not on every Redux change
 
     const handleLocationSelect = (locationData) => {
+        // Only update local state - Redux is updated only on save
         setSelectedLocation(locationData);
-        // Redux state is already updated in the GoogleMap component
     };
 
     const handleSaveLocation = () => {
@@ -556,16 +505,15 @@ const MapDrawer = () => {
             latitude: selectedLocation.lat,
             longitude: selectedLocation.lng,
             coordinates: `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`,
-            reduxState: location
         });
         
-        // Ensure Redux state is up to date
+        // NOW update Redux state when user explicitly saves
         dispatch(setLocation({
             coords: { lat: selectedLocation.lat, lng: selectedLocation.lng },
             locationName: selectedLocation.address
         }));
         
-        // Show toast notification only when save button is clicked
+        // Show toast notification
         toast.success('Location Saved Successfully!', {
             description: `${selectedLocation.address} (${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)})`,
         });
@@ -585,6 +533,12 @@ const MapDrawer = () => {
         );
     }
 
+    // Prepare initial location for the map (from Redux state)
+    const initialLocation = coords && locationName ? {
+        coords: coords,
+        locationName: locationName
+    } : null;
+
     return (
         <Drawer direction='left' dismissible={false} open={isOpen} onOpenChange={setIsOpen}>
             <SidebarMenuButton asChild tooltip="Map" onClick={() => setIsOpen(true)}>
@@ -599,12 +553,15 @@ const MapDrawer = () => {
                         Interactive World Map
                     </DrawerTitle>
                     <DrawerDescription className="text-base text-gray-700">
-                        Search for places, click anywhere on the map, drag the marker around, or dive into Street View to explore and select your location.
+                        Search for places, click anywhere on the map, drag the marker around, or dive into Street View to explore and select your location. Click "Save Location" to confirm your choice.
                     </DrawerDescription>
                 </DrawerHeader>
                 
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    <GoogleMap onLocationSelect={handleLocationSelect} />
+                    <GoogleMap 
+                        onLocationSelect={handleLocationSelect} 
+                        initialLocation={initialLocation}
+                    />
                     
                     {/* Location Display */}
                     <div className="flex-shrink-0 p-4">
@@ -627,7 +584,7 @@ const MapDrawer = () => {
                                 </code>
                             </div>
                             <p className="text-sm text-gray-600">
-                                Use search, click on map, drag marker, or navigate in Street View to update location.
+                                Use search, click on map, drag marker, or navigate in Street View to update location. Remember to save your selection!
                             </p>
                         </div>
                     </div>
