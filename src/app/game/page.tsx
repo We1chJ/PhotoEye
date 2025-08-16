@@ -61,25 +61,25 @@ const GamePage = () => {
   }, [locationState]);
 
   // Function to find nearest available Street View with progressive search
-  const findNearestStreetView = useCallback((coords: {lat: number, lng: number}, callback: (found: boolean, data: any, distance?: number) => void) => {
+  const findNearestStreetView = useCallback((coords: { lat: number, lng: number }, callback: (found: boolean, data: any, distance?: number) => void) => {
     if (!window.google) return;
-    
+
     const streetViewService = new google.maps.StreetViewService();
-    
+
     // Progressive search radiuses (in meters)
-    const searchRadiuses = [50, 100, 250, 500, 1000, 2000, 5000, 10000, 25000];
+    const searchRadiuses = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
     let currentRadiusIndex = 0;
-    
+
     const searchAtRadius = (radiusIndex: number) => {
       if (radiusIndex >= searchRadiuses.length) {
         // No Street View found within maximum radius
         callback(false, null);
         return;
       }
-      
+
       const radius = searchRadiuses[radiusIndex];
       console.log(`🔍 Searching for Street View within ${radius}m of coordinates:`, coords);
-      
+
       streetViewService.getPanorama({
         location: coords,
         radius: radius,
@@ -93,12 +93,12 @@ const GamePage = () => {
               new google.maps.LatLng(coords.lat, coords.lng),
               foundLocation
             );
-            
+
             console.log(`✅ Found Street View ${Math.round(distance)}m away at:`, {
               lat: foundLocation.lat(),
               lng: foundLocation.lng()
             });
-            
+
             callback(true, data, distance);
           } else {
             callback(true, data);
@@ -110,11 +110,11 @@ const GamePage = () => {
         }
       });
     };
-    
+
     // Start searching
     searchAtRadius(currentRadiusIndex);
   }, []);
-  
+
   // Function to update location name with debouncing using localizer
   const updateLocationName = useCallback(
     debounce(async (lat: number, lng: number) => {
@@ -125,36 +125,17 @@ const GamePage = () => {
 
       try {
         console.log('🔄 Updating location name for:', { lat, lng });
-        
+
         // Use the localizer function instead of inline geocoding
         getAddressFromLatLng(geocoder, lat, lng, (locationData: LocationData) => {
           console.log('📍 Received location data:', locationData);
-          
+
           // Extract a cleaner place name from the full address
           const fullAddress = locationData.address;
           let placeName = '';
 
           // Try to get a more user-friendly name by parsing the address
-          if (fullAddress && fullAddress !== 'Address not found') {
-            const addressParts = fullAddress.split(',').map(part => part.trim());
-            
-            // Try to find the most relevant part (usually city, then state/country)
-            if (addressParts.length >= 2) {
-              // Use the second-to-last part as the primary location (usually city)
-              placeName = addressParts[addressParts.length - 2];
-              
-              // Add country if different from the city name
-              const country = addressParts[addressParts.length - 1];
-              if (country && country !== placeName) {
-                placeName += `, ${country}`;
-              }
-            } else {
-              // Fallback to the full address
-              placeName = fullAddress;
-            }
-          } else {
-            placeName = 'Unknown Place';
-          }
+          placeName = fullAddress || 'Unknown Place';
 
           console.log('✅ Setting location name to:', placeName);
           dispatch(setLocationName(placeName));
@@ -168,11 +149,11 @@ const GamePage = () => {
   );
 
   // Enhanced function to update Street View position with nearest search fallback
-  const updateStreetViewPosition = useCallback((newCoords: {lat: number, lng: number}) => {
+  const updateStreetViewPosition = useCallback((newCoords: { lat: number, lng: number }) => {
     if (!panoramaRef.current) return;
-    
+
     console.log('🔄 Finding nearest Street View to:', newCoords);
-    
+
     findNearestStreetView(newCoords, (found, data, distance) => {
       if (found && data && panoramaRef.current) {
         const actualLocation = data.location?.latLng;
@@ -181,16 +162,16 @@ const GamePage = () => {
             lat: actualLocation.lat(),
             lng: actualLocation.lng()
           };
-          
+
           setIsUpdatingFromRedux(true);
-          
+
           panoramaRef.current.setPosition(actualCoords);
           panoramaRef.current.setPov({ heading: 0, pitch: 0 });
           panoramaRef.current.setZoom(1);
-          
+
           // Update Redux with the actual coordinates
           dispatch(setCoords(actualCoords));
-          
+
           // Show message if we moved significantly from original coordinates
           if (distance && distance > 100) {
             const distanceKm = (distance / 1000).toFixed(1);
@@ -204,10 +185,10 @@ const GamePage = () => {
             // Clear success message after 3 seconds
             setTimeout(() => setStreetViewStatus({ type: null, message: '' }), 3000);
           }
-          
+
           // Update location name for the actual position
           updateLocationName(actualCoords.lat, actualCoords.lng);
-          
+
           setTimeout(() => setIsUpdatingFromRedux(false), 100);
         }
       } else {
@@ -234,7 +215,7 @@ const GamePage = () => {
       .then(() => {
         console.log('✅ Google Maps script loaded successfully');
         setIsLoaded(true);
-        
+
         // Create geocoder instance using localizer utility
         const geocoderInstance = createGeocoder();
         if (geocoderInstance) {
@@ -243,7 +224,7 @@ const GamePage = () => {
         } else {
           console.warn('⚠️ Failed to create geocoder instance');
         }
-        
+
         dispatch(setLoading(false));
       })
       .catch((error) => {
@@ -273,7 +254,7 @@ const GamePage = () => {
           console.error('❌ Error getting location:', error);
           dispatch(setError('Failed to get current location'));
           dispatch(setLoading(false));
-          
+
           // Fallback to default coordinates
           console.log('📍 Using default coordinates:', DEFAULT_COORDINATES);
           dispatch(setCoords(DEFAULT_COORDINATES));
@@ -284,7 +265,7 @@ const GamePage = () => {
       console.warn('⚠️ Geolocation not supported');
       dispatch(setError('Geolocation not supported'));
       dispatch(setLoading(false));
-      
+
       // Fallback to default coordinates
       console.log('📍 Using default coordinates:', DEFAULT_COORDINATES);
       dispatch(setCoords(DEFAULT_COORDINATES));
@@ -327,7 +308,7 @@ const GamePage = () => {
         console.log('🔄 Skipping position update - updating from Redux');
         return;
       }
-      
+
       if (panoramaRef.current) {
         const newPosition = panoramaRef.current.getPosition();
         if (newPosition) {
@@ -348,7 +329,7 @@ const GamePage = () => {
       if (panoramaRef.current) {
         const status = panoramaRef.current.getStatus();
         console.log('🔄 Street View status changed:', status);
-        
+
         if (status !== 'OK') {
           console.log('❌ Street View error:', status);
           setStreetViewStatus({
@@ -370,11 +351,11 @@ const GamePage = () => {
     if (currentPosition) {
       const currentLat = currentPosition.lat();
       const currentLng = currentPosition.lng();
-      
+
       const tolerance = 0.000001;
       const latDiff = Math.abs(currentLat - currentCoords.lat);
       const lngDiff = Math.abs(currentLng - currentCoords.lng);
-      
+
       if (latDiff > tolerance || lngDiff > tolerance) {
         console.log('🔄 Redux coordinates changed, updating Street View position');
         updateStreetViewPosition(currentCoords);
@@ -389,7 +370,7 @@ const GamePage = () => {
   const handleRandomLocation = async () => {
     console.log('🎲 Generating random location...');
     dispatch(setLoading(true));
-    
+
     try {
       const { name, lat, lng } = await generateRandomLocation();
       console.log('🎲 Random location generated:', { name, lat, lng });
@@ -400,7 +381,7 @@ const GamePage = () => {
         coords: newCoords,
         locationName: name
       }));
-      
+
       console.log('✅ Random location set in Redux');
     } catch (error) {
       console.error('❌ Failed to generate random location:', error);
@@ -416,13 +397,12 @@ const GamePage = () => {
 
       {/* Street View Status Message */}
       {streetViewStatus.type && (
-        <div className={`absolute top-16 left-1/2 transform -translate-x-1/2 z-20 px-4 py-2 rounded-md shadow-md max-w-sm text-center ${
-          streetViewStatus.type === 'error' 
-            ? 'bg-red-100 text-red-800 border border-red-200'
-            : streetViewStatus.type === 'info'
+        <div className={`absolute top-16 left-1/2 transform -translate-x-1/2 z-20 px-4 py-2 rounded-md shadow-md max-w-sm text-center ${streetViewStatus.type === 'error'
+          ? 'bg-red-100 text-red-800 border border-red-200'
+          : streetViewStatus.type === 'info'
             ? 'bg-blue-100 text-blue-800 border border-blue-200'
             : 'bg-green-100 text-green-800 border border-green-200'
-        }`}>
+          }`}>
           <div className="text-sm">{streetViewStatus.message}</div>
           {streetViewStatus.type === 'info' && (
             <button
