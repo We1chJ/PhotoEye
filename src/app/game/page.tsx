@@ -175,19 +175,13 @@ const GamePage = () => {
           // Update Redux with the actual coordinates
           dispatch(setCoords(actualCoords));
 
-          // Show message if we moved significantly from original coordinates
+          // Only log distance moved, don't show status messages for successful loads
           if (distance && distance > 100) {
-            const distanceKm = (distance / 1000).toFixed(1);
-            setStreetViewStatus({
-              type: 'info',
-              message: `Moved to nearest Street View (${distanceKm}km away)`
-            });
-            console.log(`📍 Moved ${Math.round(distance)}m from original coordinates`);
-          } else {
-            setStreetViewStatus({ type: 'success', message: 'Street View loaded successfully' });
-            // Clear success message after 3 seconds
-            setTimeout(() => setStreetViewStatus({ type: null, message: '' }), 3000);
+            console.log(`📍 Moved ${Math.round(distance)}m from original coordinates to nearest Street View`);
           }
+          
+          // Clear any previous error status since we found Street View
+          setStreetViewStatus({ type: null, message: '' });
 
           // Update location name for the actual position
           updateLocationName(actualCoords.lat, actualCoords.lng);
@@ -539,34 +533,23 @@ const GamePage = () => {
         </div>
       )}
 
-      {/* Enhanced Street View Status Messages */}
-      {streetViewStatus.type && (
-        <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 z-30 px-6 py-4 rounded-lg shadow-lg max-w-md text-center transition-all duration-300 ${streetViewStatus.type === 'error'
-            ? 'bg-red-500/90 text-white border-2 border-red-400 backdrop-blur-sm'
-            : streetViewStatus.type === 'info'
-              ? 'bg-blue-100 text-blue-800 border border-blue-200'
-              : 'bg-green-100 text-green-800 border border-green-200'
-          }`}>
-          <div className={`font-semibold ${streetViewStatus.type === 'error' ? 'text-lg' : 'text-sm'}`}>
-            {streetViewStatus.type === 'error' && '⚠️ '}
-            {streetViewStatus.message}
-          </div>
-          {streetViewStatus.type === 'error' && (
+      {/* Street View Status Messages - Only show errors */}
+      {streetViewStatus.type === 'error' && (
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-30">
+          <div className="bg-red-500/90 text-white border-2 border-red-400 backdrop-blur-sm px-6 py-4 rounded-lg shadow-lg max-w-md text-center transition-all duration-300">
+            <div className="font-semibold text-lg">
+              ⚠️ {streetViewStatus.message}
+            </div>
             <div className="text-sm text-red-100 mt-2">
               Try clicking "Random Location" to find a place with Street View
             </div>
-          )}
-          {(streetViewStatus.type === 'info' || streetViewStatus.type === 'error') && (
             <button
               onClick={() => setStreetViewStatus({ type: null, message: '' })}
-              className={`mt-2 text-xs px-3 py-1 rounded-full transition-colors ${streetViewStatus.type === 'error'
-                  ? 'bg-red-600/50 hover:bg-red-600/70 text-white'
-                  : 'bg-blue-200 hover:bg-blue-300 text-blue-800'
-                }`}
+              className="mt-2 text-xs px-3 py-1 rounded-full transition-colors bg-red-600/50 hover:bg-red-600/70 text-white"
             >
               ✕ Dismiss
             </button>
-          )}
+          </div>
         </div>
       )}
 
