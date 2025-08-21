@@ -448,7 +448,7 @@ const MapDrawer = () => {
     if (!isMounted) {
         return (
             <SidebarMenuButton asChild tooltip="Map">
-                <a href="#" className="flex items-center gap-2">
+                <a className="flex items-center gap-2">
                     <Map />
                     <span>Map</span>
                 </a>
@@ -465,7 +465,7 @@ const MapDrawer = () => {
     return (
         <Drawer direction='left' dismissible={false} open={isOpen} onOpenChange={setIsOpen}>
             <SidebarMenuButton asChild tooltip="Map" onClick={() => setIsOpen(true)}>
-                <a href="#" className="flex items-center gap-2">
+                <a className="flex items-center gap-2">
                     <Map />
                     <span>Map</span>
                 </a>
