@@ -35,6 +35,43 @@ function debounce<T extends (...args: any[]) => any>(
   };
 }
 
+/**
+ * Captures the exact Street View image from the current panorama view and angle
+ */
+function captureCurrentView(
+  apiKey: string,
+  panorama: google.maps.StreetViewPanorama
+): string | null {
+  try {
+    const position = panorama.getPosition();
+    const pov = panorama.getPov();
+
+    if (!position || !apiKey) {
+      console.error('❌ Missing position or API key for image capture');
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      size: '640x640',
+      location: `${position.lat()},${position.lng()}`,
+      heading: Math.round(pov.heading || 0).toString(),
+      pitch: Math.round(pov.pitch || 0).toString(),
+      fov: '90',
+      format: 'jpg',
+      key: apiKey
+    });
+
+    const imageUrl = `https://maps.googleapis.com/maps/api/streetview?${params.toString()}`;
+    
+    console.log('📸 Captured Street View image URL:', imageUrl);
+    return imageUrl;
+
+  } catch (error) {
+    console.error('❌ Failed to capture Street View image:', error);
+    return null;
+  }
+}
+
 const GamePage = () => {
   const mapRef = useRef<HTMLDivElement>(null);
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
@@ -49,6 +86,10 @@ const GamePage = () => {
   // New state to differentiate loading types
   const [loadingType, setLoadingType] = useState<'initial' | 'random' | null>(null);
 
+  // Image capture states
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [showImagePreview, setShowImagePreview] = useState(false);
+
   // Redux state with typed hooks
   const dispatch = useAppDispatch();
   const location = useAppSelector(selectLocation);
@@ -62,6 +103,59 @@ const GamePage = () => {
   useEffect(() => {
     console.log('🎮 GamePage Location State:', locationState);
   }, [locationState]);
+
+  // Function to handle image capture
+  const handleCaptureImage = useCallback(() => {
+    if (!panoramaRef.current || !apiKey) {
+      console.error('❌ Cannot capture image: panorama or API key not available');
+      return;
+    }
+
+    try {
+      const position = panoramaRef.current.getPosition();
+      const pov = panoramaRef.current.getPov();
+
+      if (!position) {
+        console.error('❌ No position available for image capture');
+        return;
+      }
+
+      // Create image URL with proper parameters
+      const params = new URLSearchParams({
+        size: '640x640',
+        location: `${position.lat()},${position.lng()}`,
+        heading: Math.round(pov.heading || 0).toString(),
+        pitch: Math.round(pov.pitch || 0).toString(),
+        fov: '90',
+        format: 'jpg',
+        key: apiKey
+      });
+
+      const imageUrl = `https://maps.googleapis.com/maps/api/streetview?${params.toString()}`;
+      
+      console.log('📸 Generated Street View image URL:', imageUrl);
+      console.log('📍 Position:', { lat: position.lat(), lng: position.lng() });
+      console.log('👁️ POV:', { heading: pov.heading, pitch: pov.pitch });
+      
+      setCapturedImage(imageUrl);
+      setShowImagePreview(true);
+      
+    } catch (error) {
+      console.error('❌ Error capturing image:', error);
+    }
+  }, [apiKey]);
+
+  // Function to download the captured image
+  const handleDownloadImage = useCallback(() => {
+    if (!capturedImage) return;
+
+    const link = document.createElement('a');
+    link.href = capturedImage;
+    link.download = `streetview-${Date.now()}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [capturedImage]);
 
   // Function to find nearest available Street View with progressive search
   const findNearestStreetView = useCallback((coords: { lat: number, lng: number }, callback: (found: boolean, data: any, distance?: number) => void) => {
@@ -398,6 +492,111 @@ const GamePage = () => {
     }
   };
 
+  // Simple Image Preview Drawer Component
+  const ImagePreviewModal = () => {
+    if (!showImagePreview || !capturedImage) return null;
+
+    return (
+      <div 
+        className="fixed inset-0 bg-black/30 flex items-end justify-center z-50" 
+        onClick={(e) => {
+          // Close modal when clicking outside
+          if (e.target === e.currentTarget) {
+            setShowImagePreview(false);
+          }
+        }}
+      >
+        {/* Drawer sliding up from bottom - Increased size */}
+        <div className="bg-white rounded-t-2xl shadow-2xl w-full max-w-4xl animate-in slide-in-from-bottom duration-300">
+          {/* Handle bar */}
+          <div className="flex justify-center pt-4 pb-3">
+            <div className="w-16 h-1 bg-gray-300 rounded-full"></div>
+          </div>
+          
+          {/* Header */}
+          <div className="flex items-center justify-between px-8 pb-4">
+            <div className="flex items-center space-x-3">
+              <span className="text-3xl">📸</span>
+              <h2 className="text-2xl font-bold text-gray-800">Street View Captured</h2>
+            </div>
+            <button
+              onClick={() => setShowImagePreview(false)}
+              className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100 transition-colors"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="px-8 pb-8">
+            {/* Image - Increased size */}
+            <div className="bg-gray-50 rounded-xl overflow-hidden mb-6">
+              <img
+                src={capturedImage}
+                alt="Captured Street View"
+                className="w-full h-auto max-h-[32rem] object-contain"
+                onLoad={() => {
+                  console.log('✅ Image loaded successfully');
+                }}
+                onError={(e) => {
+                  console.error('❌ Failed to load captured image');
+                  console.error('Image URL:', capturedImage);
+                }}
+              />
+            </div>
+
+            {/* Location Info */}
+            {locationName && (
+              <div className="bg-blue-50 rounded-lg p-4 mb-6">
+                <div className="font-semibold text-gray-800 flex items-center space-x-2 text-lg">
+                  <span>📍</span>
+                  <span>{locationName}</span>
+                </div>
+                {currentCoords && (
+                  <div className="text-base text-gray-600 mt-2 font-mono">
+                    {formatCoordinates(currentCoords.lat, currentCoords.lng)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-4">
+              <button
+                onClick={handleDownloadImage}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white py-4 px-6 rounded-lg font-medium transition-colors flex items-center justify-center space-x-3 text-lg"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Download</span>
+              </button>
+              <button
+                onClick={() => setShowImagePreview(false)}
+                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-4 px-6 rounded-lg font-medium transition-colors text-lg"
+              >
+                Close
+              </button>
+              <a
+                href={capturedImage}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-4 px-6 rounded-lg font-medium transition-colors flex items-center justify-center space-x-3 text-lg"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                <span>Open</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Initial Location Permission Loading Overlay
   const InitialLocationOverlay = () => (
     <div className="absolute inset-0 bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex items-center justify-center z-50">
@@ -553,14 +752,26 @@ const GamePage = () => {
         </div>
       )}
 
-      {/* Random Button */}
+      {/* Top Right Button Container */}
       {isLoaded && currentCoords && !isFetchingLocation && (
-        <button
-          onClick={handleRandomLocation}
-          className="absolute top-4 right-4 z-20 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-4 py-2 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 hover:shadow-xl"
-        >
-          🎲 Random Location
-        </button>
+        <div className="absolute top-4 right-4 z-20 flex space-x-3">
+          {/* Capture Image Button */}
+          <button
+            onClick={handleCaptureImage}
+            className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white px-4 py-2 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 hover:shadow-xl flex items-center space-x-2"
+          >
+            <span>📸</span>
+            <span>Capture</span>
+          </button>
+
+          {/* Random Location Button */}
+          <button
+            onClick={handleRandomLocation}
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-4 py-2 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 hover:shadow-xl"
+          >
+            🎲 Random Location
+          </button>
+        </div>
       )}
 
       {/* Conditional Loading Overlays - Only show initial overlay when actually loading */}
@@ -569,6 +780,9 @@ const GamePage = () => {
       
       {/* Show initial overlay when no coordinates are set and not currently loading */}
       {!isFetchingLocation && !currentCoords && <InitialLocationOverlay />}
+
+      {/* Image Preview Modal */}
+      <ImagePreviewModal />
     </div>
   );
 };
