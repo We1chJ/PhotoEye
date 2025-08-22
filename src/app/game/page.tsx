@@ -22,7 +22,7 @@ import {
   DEFAULT_COORDINATES,
   type LocationData
 } from '@/utils/localizer';
-import { captureCurrentView } from '@/utils/imageCapture';
+import { captureCurrentView, captureCurrentViewWithOptions } from '@/utils/imageCapture';
 import ImageCaptureButton from '@/components/ImageCaptureButton';
 import ImagePreviewModal from '@/components/ImagePreviewModal';
 import RandomLocationButton from '@/components/RandomLocationButton';
@@ -49,15 +49,10 @@ const GamePage = () => {
     type: 'success' | 'info' | 'error' | null;
     message: string;
   }>({ type: null, message: '' });
-
-  // New state to differentiate loading types
-  const [loadingType, setLoadingType] = useState<'initial' | 'random' | null>(null);
-
-  // Image capture states
+  const [loadingType, setLoadingType] = useState<'initial' | 'random' | 'capture' | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [showImagePreview, setShowImagePreview] = useState(false);
 
-  // Redux state with typed hooks
   const dispatch = useAppDispatch();
   const location = useAppSelector(selectLocation);
   const currentCoords = useAppSelector(selectCoords);
@@ -71,31 +66,133 @@ const GamePage = () => {
     console.log('🎮 GamePage Location State:', locationState);
   }, [locationState]);
 
-  // Function to handle image capture
-  const handleCaptureImage = useCallback(() => {
-    if (!panoramaRef.current || !apiKey) {
-      console.error('❌ Cannot capture image: panorama or API key not available');
+  // Modified capture function with loading state
+  const handleCaptureImage = useCallback(async () => {
+    if (!panoramaRef.current) {
+      console.error('❌ Cannot capture image: panorama not available');
       return;
     }
-    // Use the new captureCurrentView utility function
+
+    setLoadingType('capture');
     try {
-      if (!panoramaRef.current || !apiKey) {
-        console.error('❌ Cannot capture image: panorama or API key not available');
-        return;
+      console.log('📸 Starting secure image capture...');
+
+      if (capturedImage && capturedImage.startsWith('blob:')) {
+        URL.revokeObjectURL(capturedImage);
       }
-      const imageUrl = captureCurrentView(apiKey, panoramaRef.current);
+
+      const imageUrl = await captureCurrentView(panoramaRef.current);
+
       if (imageUrl) {
+        console.log('✅ Image captured successfully!');
         setCapturedImage(imageUrl);
         setShowImagePreview(true);
       } else {
-        console.error('❌ Failed to generate Street View image URL');
+        console.error('❌ Failed to capture Street View image');
+        setStreetViewStatus({
+          type: 'error',
+          message: 'Failed to capture image. Please try again.'
+        });
       }
     } catch (error) {
       console.error('❌ Error capturing image:', error);
+      setStreetViewStatus({
+        type: 'error',
+        message: 'An error occurred while capturing the image.'
+      });
+    } finally {
+      setLoadingType(null);
     }
-  }, [apiKey]);
+  }, [capturedImage]);
 
-  // Function to download the captured image
+  const handleCaptureImageWithLoading = useCallback(async () => {
+    if (!panoramaRef.current) {
+      console.error('❌ Cannot capture image: panorama not available');
+      return;
+    }
+
+    setLoadingType('capture');
+    try {
+      console.log('📸 Starting secure image capture...');
+
+      if (capturedImage && capturedImage.startsWith('blob:')) {
+        URL.revokeObjectURL(capturedImage);
+      }
+
+      const imageUrl = await captureCurrentView(panoramaRef.current);
+
+      if (imageUrl) {
+        console.log('✅ Image captured successfully!');
+        setCapturedImage(imageUrl);
+        setShowImagePreview(true);
+      } else {
+        console.error('❌ Failed to capture Street View image');
+        setStreetViewStatus({
+          type: 'error',
+          message: 'Failed to capture image. Please try again.'
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error capturing image:', error);
+      setStreetViewStatus({
+        type: 'error',
+        message: 'An error occurred while capturing the image.'
+      });
+    } finally {
+      setLoadingType(null);
+    }
+  }, [capturedImage]);
+
+  const handleCaptureImageEnhanced = useCallback(async () => {
+    if (!panoramaRef.current) {
+      console.error('❌ Cannot capture image: panorama not available');
+      return;
+    }
+
+    setLoadingType('capture');
+    try {
+      console.log('📸 Starting enhanced image capture...');
+
+      if (capturedImage && capturedImage.startsWith('blob:')) {
+        URL.revokeObjectURL(capturedImage);
+      }
+
+      const result = await captureCurrentViewWithOptions(panoramaRef.current, {
+        size: '800x800',
+        format: 'jpg',
+      });
+
+      if (result.url) {
+        console.log('✅ Enhanced capture successful!', result.metadata);
+        setCapturedImage(result.url);
+        setShowImagePreview(true);
+      } else {
+        console.error('❌ Enhanced capture failed:', result.error);
+        setStreetViewStatus({
+          type: 'error',
+          message: result.error || 'Failed to capture image'
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error in enhanced capture:', error);
+      setStreetViewStatus({
+        type: 'error',
+        message: 'An error occurred while capturing the image.'
+      });
+    } finally {
+      setLoadingType(null);
+    }
+  }, [capturedImage]);
+
+  useEffect(() => {
+    return () => {
+      if (capturedImage && capturedImage.startsWith('blob:')) {
+        URL.revokeObjectURL(capturedImage);
+        console.log('🧹 Cleaned up image URL on unmount');
+      }
+    };
+  }, [capturedImage]);
+
   const handleDownloadImage = useCallback(() => {
     if (!capturedImage) return;
 
@@ -107,19 +204,15 @@ const GamePage = () => {
     document.body.removeChild(link);
   }, [capturedImage]);
 
-  // Function to find nearest available Street View with progressive search
   const findNearestStreetView = useCallback((coords: { lat: number, lng: number }, callback: (found: boolean, data: any, distance?: number) => void) => {
     if (!window.google) return;
 
     const streetViewService = new google.maps.StreetViewService();
-
-    // Progressive search radiuses (in meters)
     const searchRadiuses = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
     let currentRadiusIndex = 0;
 
     const searchAtRadius = (radiusIndex: number) => {
       if (radiusIndex >= searchRadiuses.length) {
-        // No Street View found within maximum radius
         callback(false, null);
         return;
       }
@@ -133,7 +226,6 @@ const GamePage = () => {
         source: google.maps.StreetViewSource.OUTDOOR
       }, (data, status) => {
         if (status === 'OK' && data && data.location) {
-          // Calculate actual distance to found panorama
           const foundLocation = data.location.latLng;
           if (foundLocation) {
             const distance = google.maps.geometry.spherical.computeDistanceBetween(
@@ -151,18 +243,15 @@ const GamePage = () => {
             callback(true, data);
           }
         } else {
-          // Try next radius
           console.log(`❌ No Street View found within ${radius}m, trying larger radius...`);
           searchAtRadius(radiusIndex + 1);
         }
       });
     };
 
-    // Start searching
     searchAtRadius(currentRadiusIndex);
   }, []);
 
-  // Function to update location name with debouncing using localizer
   const updateLocationName = useCallback(
     debounce(async (lat: number, lng: number) => {
       if (!geocoder) {
@@ -172,18 +261,10 @@ const GamePage = () => {
 
       try {
         console.log('🔄 Updating location name for:', { lat, lng });
-
-        // Use the localizer function instead of inline geocoding
         getAddressFromLatLng(geocoder, lat, lng, (locationData: LocationData) => {
           console.log('📍 Received location data:', locationData);
-
-          // Extract a cleaner place name from the full address
           const fullAddress = locationData.address;
-          let placeName = '';
-
-          // Try to get a more user-friendly name by parsing the address
-          placeName = fullAddress || 'Unknown Place';
-
+          let placeName = fullAddress || 'Unknown Place';
           console.log('✅ Setting location name to:', placeName);
           dispatch(setLocationName(placeName));
         });
@@ -195,7 +276,6 @@ const GamePage = () => {
     [dispatch, geocoder]
   );
 
-  // Enhanced function to update Street View position with nearest search fallback
   const updateStreetViewPosition = useCallback((newCoords: { lat: number, lng: number }) => {
     if (!panoramaRef.current) return;
 
@@ -216,18 +296,13 @@ const GamePage = () => {
           panoramaRef.current.setPov({ heading: 0, pitch: 0 });
           panoramaRef.current.setZoom(1);
 
-          // Update Redux with the actual coordinates
           dispatch(setCoords(actualCoords));
 
-          // Only log distance moved, don't show status messages for successful loads
           if (distance && distance > 100) {
             console.log(`📍 Moved ${Math.round(distance)}m from original coordinates to nearest Street View`);
           }
 
-          // Clear any previous error status since we found Street View
           setStreetViewStatus({ type: null, message: '' });
-
-          // Update location name for the actual position
           updateLocationName(actualCoords.lat, actualCoords.lng);
 
           setTimeout(() => setIsUpdatingFromRedux(false), 100);
@@ -242,7 +317,6 @@ const GamePage = () => {
     });
   }, [findNearestStreetView, dispatch, updateLocationName]);
 
-  // Load Google Maps script using localizer utility
   useEffect(() => {
     if (!apiKey) {
       const errorMsg = 'Google Maps API key not found. Please set NEXT_PUBLIC_GOOGLE_MAP_KEY in your .env file.';
@@ -253,12 +327,11 @@ const GamePage = () => {
     dispatch(setLoading(true));
     setLoadingType('initial');
 
-    loadGoogleMapsScript(apiKey, ['geometry']) // Add geometry library for distance calculations
+    loadGoogleMapsScript(apiKey, ['geometry'])
       .then(() => {
         console.log('✅ Google Maps script loaded successfully');
         setIsLoaded(true);
 
-        // Create geocoder instance using localizer utility
         const geocoderInstance = createGeocoder();
         if (geocoderInstance) {
           setGeocoder(geocoderInstance);
@@ -278,7 +351,6 @@ const GamePage = () => {
       });
   }, [apiKey, dispatch]);
 
-  // Get user's current location
   useEffect(() => {
     dispatch(setLoading(true));
     setLoadingType('initial');
@@ -298,19 +370,16 @@ const GamePage = () => {
         },
         (error) => {
           console.log('📍 User location access:', error.code === 1 ? 'denied by user' : 'failed');
-
-          // Only stop loading, don't set any coordinates or errors if user denied permission
           dispatch(setLoading(false));
           setLoadingType(null);
 
-          // Don't set any fallback coordinates - let user choose to use random location button
-          if (error.code !== 1) { // Not a permission denied error
+          if (error.code !== 1) {
             console.error('❌ Geolocation error:', error);
             dispatch(setError('Location access failed. Use "Random Location" to start exploring.'));
           }
         },
         {
-          timeout: 10000, // 10 second timeout
+          timeout: 10000,
           enableHighAccuracy: false
         }
       );
@@ -318,14 +387,12 @@ const GamePage = () => {
       console.warn('⚠️ Geolocation not supported');
       dispatch(setLoading(false));
       setLoadingType(null);
-      // Don't set error or fallback coordinates - let user choose random location
     }
   }, [dispatch, updateLocationName]);
 
-  // Initialize Street View with event listeners
   useEffect(() => {
     if (!isLoaded || !currentCoords || !mapRef.current) return;
-    if (panoramaRef.current) return; // already initialized
+    if (panoramaRef.current) return;
 
     console.log('🎮 Initializing Street View at:', currentCoords);
 
@@ -340,18 +407,15 @@ const GamePage = () => {
       enableCloseButton: false,
     });
 
-    // Event listener for successful panorama load
     panoramaRef.current.addListener('pano_changed', () => {
       console.log('📷 Panorama changed - new imagery loaded');
       const panoId = panoramaRef.current?.getPano();
       if (panoId) {
         console.log('✅ Street View loaded successfully, pano ID:', panoId);
-        // Clear any previous error status
         setStreetViewStatus({ type: null, message: '' });
       }
     });
 
-    // Event listener for position changes
     panoramaRef.current.addListener('position_changed', () => {
       if (isUpdatingFromRedux) {
         console.log('🔄 Skipping position update - updating from Redux');
@@ -373,7 +437,6 @@ const GamePage = () => {
       }
     });
 
-    // Event listener for status changes
     panoramaRef.current.addListener('status_changed', () => {
       if (panoramaRef.current) {
         const status = panoramaRef.current.getStatus();
@@ -392,7 +455,6 @@ const GamePage = () => {
     console.log('✅ Street View initialized successfully at:', currentCoords);
   }, [isLoaded, currentCoords, dispatch, updateLocationName, isUpdatingFromRedux]);
 
-  // Update Street View when Redux location changes with availability check
   useEffect(() => {
     if (!panoramaRef.current || !currentCoords) return;
 
@@ -415,7 +477,6 @@ const GamePage = () => {
     }
   }, [currentCoords, updateStreetViewPosition]);
 
-  // Handle Random Location
   const handleRandomLocation = async () => {
     console.log('🎲 Generating random location...');
     dispatch(setLoading(true));
@@ -442,10 +503,8 @@ const GamePage = () => {
     }
   };
 
-  // Initial Location Permission Loading Overlay
   const InitialLocationOverlay = () => (
     <div className="absolute inset-0 bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 flex items-center justify-center z-50">
-      {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -left-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
         <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-1000"></div>
@@ -453,7 +512,6 @@ const GamePage = () => {
       </div>
 
       <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl p-8 max-w-md text-center relative z-10">
-        {/* Location icon with pulse animation */}
         <div className="relative mb-6">
           <div className="absolute inset-0 rounded-full bg-blue-400 opacity-20 animate-ping"></div>
           <div className="relative bg-gradient-to-r from-blue-500 to-purple-600 rounded-full p-4 mx-auto w-16 h-16 flex items-center justify-center">
@@ -495,10 +553,8 @@ const GamePage = () => {
     </div>
   );
 
-  // Random Location Loading Overlay
   const RandomLocationOverlay = () => (
     <div className="absolute inset-0 bg-gradient-to-br from-emerald-800 via-teal-900 to-cyan-900 flex items-center justify-center z-50">
-      {/* Animated globe/world elements */}
       <div className="absolute inset-0 overflow-hidden">
         {[...Array(6)].map((_, i) => (
           <div
@@ -515,14 +571,12 @@ const GamePage = () => {
       </div>
 
       <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl p-8 max-w-sm text-center relative z-10">
-        {/* Spinning globe icon */}
         <div className="relative mb-6">
           <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full p-4 mx-auto w-20 h-20 flex items-center justify-center animate-spin">
             <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
-          {/* Orbiting dots */}
           <div className="absolute inset-0 animate-spin">
             <div className="absolute top-0 left-1/2 w-2 h-2 bg-teal-400 rounded-full transform -translate-x-1/2 -translate-y-1"></div>
             <div className="absolute bottom-0 left-1/2 w-2 h-2 bg-emerald-400 rounded-full transform -translate-x-1/2 translate-y-1"></div>
@@ -549,15 +603,37 @@ const GamePage = () => {
     </div>
   );
 
+  // Updated Capture Loading Overlay with grey-out popover
+  const CaptureLoadingOverlay = () => (
+    <div className="absolute inset-0 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-40 transition-opacity duration-300 ease-in-out">
+      <div className="bg-gray-800/90 border border-gray-600/50 rounded-xl shadow-2xl p-6 max-w-xs text-center animate-fade-in">
+        <div className="relative mb-4">
+          <div className="bg-gray-700/50 rounded-full p-3 mx-auto w-12 h-12 flex items-center justify-center animate-pulse">
+            <svg className="w-6 h-6 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 9a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+        </div>
+        <p className="text-gray-200 text-sm font-medium">Capturing Street View...</p>
+        <div className="flex items-center justify-center mt-3">
+          <div className="flex space-x-1.5">
+            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
+            <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce delay-200"></div>
+            <div className="w-2 h-2 bg-gray-200 rounded-full animate-bounce delay-300"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full h-full relative">
       <div ref={mapRef} className="absolute inset-0 w-full h-full bg-gray-100" />
 
-      {/* Collapsible Location Panel */}
       {locationName && (
         <div className="group absolute top-0 left-1/2 transform -translate-x-1/2 z-20 transition-all duration-300 ease-in-out">
-          {/* Main panel - slides down on hover */}
-          <div className="bg-black/20 backdrop-blur-md border border-white/30 px-6 py-4 rounded-b-xl shadow-lg transform -translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out">
+          <div className="bg-black/20 backdrop-blur-md border border-white/30 px-6 py-4 rounded-b-xl shadow-lg transform -translate-y-full group-hover:translate-y-0 transition-transform duration-300">
             <div className="text-center">
               <div className="text-white/80 text-sm font-medium mb-1">You are at:</div>
               <div className="font-bold text-white text-lg mb-2">{locationName}</div>
@@ -568,7 +644,6 @@ const GamePage = () => {
               )}
             </div>
           </div>
-          {/* Arrow tab - always visible, fixed at the top center */}
           <div className="fixed top-0 left-1/2 transform -translate-x-1/2 z-30 bg-black/20 backdrop-blur-md border-x border-b border-white/30 px-8 py-1 rounded-b-lg mx-auto w-fit cursor-pointer group-hover:opacity-0 group-hover:pointer-events-none transition-opacity duration-300">
             <div className="text-white/60 text-sm transform group-hover:rotate-180 transition-transform duration-300">
               ▼
@@ -577,7 +652,6 @@ const GamePage = () => {
         </div>
       )}
 
-      {/* Street View Status Messages - Only show errors */}
       {streetViewStatus.type === 'error' && (
         <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-30">
           <div className="bg-red-500/90 text-white border-2 border-red-400 backdrop-blur-sm px-6 py-4 rounded-lg shadow-lg max-w-md text-center transition-all duration-300">
@@ -597,22 +671,18 @@ const GamePage = () => {
         </div>
       )}
 
-      {/* Top Right Button Container */}
       {isLoaded && currentCoords && !isFetchingLocation && (
         <div className="absolute top-4 right-4 z-20 flex space-x-3">
-          <ImageCaptureButton onCapture={handleCaptureImage} />
+          <ImageCaptureButton onCapture={handleCaptureImage} isLoading={loadingType === 'capture'} />
           <RandomLocationButton onRandomLocation={handleRandomLocation} />
         </div>
       )}
 
-      {/* Conditional Loading Overlays - Only show initial overlay when actually loading */}
       {isFetchingLocation && loadingType === 'initial' && <InitialLocationOverlay />}
       {isFetchingLocation && loadingType === 'random' && <RandomLocationOverlay />}
-
-      {/* Show initial overlay when no coordinates are set and not currently loading */}
+      {loadingType === 'capture' && <CaptureLoadingOverlay />}
       {!isFetchingLocation && !currentCoords && <InitialLocationOverlay />}
 
-      {/* Image Preview Modal */}
       <ImagePreviewModal
         capturedImage={capturedImage}
         showImagePreview={showImagePreview}
