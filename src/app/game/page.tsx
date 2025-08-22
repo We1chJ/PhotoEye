@@ -22,6 +22,7 @@ import {
   DEFAULT_COORDINATES,
   type LocationData
 } from '@/utils/localizer';
+import { captureCurrentView } from '@/utils/imageCapture';
 
 // Simple debounce function
 function debounce<T extends (...args: any[]) => any>(
@@ -35,43 +36,6 @@ function debounce<T extends (...args: any[]) => any>(
   };
 }
 
-/**
- * Captures the exact Street View image from the current panorama view and angle
- */
-function captureCurrentView(
-  apiKey: string,
-  panorama: google.maps.StreetViewPanorama
-): string | null {
-  try {
-    const position = panorama.getPosition();
-    const pov = panorama.getPov();
-
-    if (!position || !apiKey) {
-      console.error('❌ Missing position or API key for image capture');
-      return null;
-    }
-
-    const params = new URLSearchParams({
-      size: '640x640',
-      location: `${position.lat()},${position.lng()}`,
-      heading: Math.round(pov.heading || 0).toString(),
-      pitch: Math.round(pov.pitch || 0).toString(),
-      fov: '90',
-      format: 'jpg',
-      key: apiKey
-    });
-
-    const imageUrl = `https://maps.googleapis.com/maps/api/streetview?${params.toString()}`;
-    
-    console.log('📸 Captured Street View image URL:', imageUrl);
-    return imageUrl;
-
-  } catch (error) {
-    console.error('❌ Failed to capture Street View image:', error);
-    return null;
-  }
-}
-
 const GamePage = () => {
   const mapRef = useRef<HTMLDivElement>(null);
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
@@ -82,7 +46,7 @@ const GamePage = () => {
     type: 'success' | 'info' | 'error' | null;
     message: string;
   }>({ type: null, message: '' });
-  
+
   // New state to differentiate loading types
   const [loadingType, setLoadingType] = useState<'initial' | 'random' | null>(null);
 
@@ -110,36 +74,19 @@ const GamePage = () => {
       console.error('❌ Cannot capture image: panorama or API key not available');
       return;
     }
-
+    // Use the new captureCurrentView utility function
     try {
-      const position = panoramaRef.current.getPosition();
-      const pov = panoramaRef.current.getPov();
-
-      if (!position) {
-        console.error('❌ No position available for image capture');
+      if (!panoramaRef.current || !apiKey) {
+        console.error('❌ Cannot capture image: panorama or API key not available');
         return;
       }
-
-      // Create image URL with proper parameters
-      const params = new URLSearchParams({
-        size: '640x640',
-        location: `${position.lat()},${position.lng()}`,
-        heading: Math.round(pov.heading || 0).toString(),
-        pitch: Math.round(pov.pitch || 0).toString(),
-        fov: '90',
-        format: 'jpg',
-        key: apiKey
-      });
-
-      const imageUrl = `https://maps.googleapis.com/maps/api/streetview?${params.toString()}`;
-      
-      console.log('📸 Generated Street View image URL:', imageUrl);
-      console.log('📍 Position:', { lat: position.lat(), lng: position.lng() });
-      console.log('👁️ POV:', { heading: pov.heading, pitch: pov.pitch });
-      
-      setCapturedImage(imageUrl);
-      setShowImagePreview(true);
-      
+      const imageUrl = captureCurrentView(apiKey, panoramaRef.current);
+      if (imageUrl) {
+        setCapturedImage(imageUrl);
+        setShowImagePreview(true);
+      } else {
+        console.error('❌ Failed to generate Street View image URL');
+      }
     } catch (error) {
       console.error('❌ Error capturing image:', error);
     }
@@ -273,7 +220,7 @@ const GamePage = () => {
           if (distance && distance > 100) {
             console.log(`📍 Moved ${Math.round(distance)}m from original coordinates to nearest Street View`);
           }
-          
+
           // Clear any previous error status since we found Street View
           setStreetViewStatus({ type: null, message: '' });
 
@@ -348,11 +295,11 @@ const GamePage = () => {
         },
         (error) => {
           console.log('📍 User location access:', error.code === 1 ? 'denied by user' : 'failed');
-          
+
           // Only stop loading, don't set any coordinates or errors if user denied permission
           dispatch(setLoading(false));
           setLoadingType(null);
-          
+
           // Don't set any fallback coordinates - let user choose to use random location button
           if (error.code !== 1) { // Not a permission denied error
             console.error('❌ Geolocation error:', error);
@@ -497,8 +444,8 @@ const GamePage = () => {
     if (!showImagePreview || !capturedImage) return null;
 
     return (
-      <div 
-        className="fixed inset-0 bg-black/30 flex items-end justify-center z-50" 
+      <div
+        className="fixed inset-0 bg-black/30 flex items-end justify-center z-50"
         onClick={(e) => {
           // Close modal when clicking outside
           if (e.target === e.currentTarget) {
@@ -512,7 +459,7 @@ const GamePage = () => {
           <div className="flex justify-center pt-4 pb-3">
             <div className="w-16 h-1 bg-gray-300 rounded-full"></div>
           </div>
-          
+
           {/* Header */}
           <div className="flex items-center justify-between px-8 pb-4">
             <div className="flex items-center space-x-3">
@@ -606,7 +553,7 @@ const GamePage = () => {
         <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-1000"></div>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-500"></div>
       </div>
-      
+
       <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl p-8 max-w-md text-center relative z-10">
         {/* Location icon with pulse animation */}
         <div className="relative mb-6">
@@ -618,7 +565,7 @@ const GamePage = () => {
             </svg>
           </div>
         </div>
-        
+
         <h2 className="text-2xl font-bold mb-4 text-white bg-gradient-to-r from-blue-200 to-purple-200 bg-clip-text text-transparent">
           Welcome to Street Explorer
         </h2>
@@ -668,7 +615,7 @@ const GamePage = () => {
           ></div>
         ))}
       </div>
-      
+
       <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl p-8 max-w-sm text-center relative z-10">
         {/* Spinning globe icon */}
         <div className="relative mb-6">
@@ -683,7 +630,7 @@ const GamePage = () => {
             <div className="absolute bottom-0 left-1/2 w-2 h-2 bg-emerald-400 rounded-full transform -translate-x-1/2 translate-y-1"></div>
           </div>
         </div>
-        
+
         <h2 className="text-2xl font-bold mb-4 text-white">
           🌍 Exploring the World
         </h2>
@@ -777,7 +724,7 @@ const GamePage = () => {
       {/* Conditional Loading Overlays - Only show initial overlay when actually loading */}
       {isFetchingLocation && loadingType === 'initial' && <InitialLocationOverlay />}
       {isFetchingLocation && loadingType === 'random' && <RandomLocationOverlay />}
-      
+
       {/* Show initial overlay when no coordinates are set and not currently loading */}
       {!isFetchingLocation && !currentCoords && <InitialLocationOverlay />}
 
