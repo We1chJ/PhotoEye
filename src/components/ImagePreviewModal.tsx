@@ -1,5 +1,5 @@
 'use client'
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatCoordinates } from '@/utils/localizer';
 import { CaptureResult } from '@/types/type';
 import { uploadImageToStorage } from '@/app/game/actions';
@@ -21,6 +21,13 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isStarred, setIsStarred] = useState(false);
+
+  // Reset isStarred to false whenever the modal is opened
+  useEffect(() => {
+    if (showImagePreview) {
+      setIsStarred(false);
+    }
+  }, [showImagePreview]);
 
   if (!showImagePreview || !captureResult.url) return null;
 
