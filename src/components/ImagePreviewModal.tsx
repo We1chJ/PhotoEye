@@ -4,6 +4,7 @@ import { formatCoordinates } from '@/utils/localizer';
 import { CaptureResult } from '@/types/type';
 import { uploadImageToStorage } from '@/app/game/actions';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 interface ImagePreviewModalProps {
   captureResult: CaptureResult;
@@ -46,9 +47,19 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   const handleStarClick = async () => {
     if (isUploading || isStarred) return;
 
+    const { data, error } = await supabase.auth.getSession();
+    const user = data?.session?.user;
+    if (error || !user) {
+      toast.error('Failed to add image to favorites.', {
+        duration: 4000,
+        icon: '❌'
+      });
+      return;
+    }
+
     setIsUploading(true);
     try {
-      const result = await uploadImageToStorage(captureResult);
+      const result = await uploadImageToStorage(captureResult, user);
       if (result.success) {
         setIsStarred(true);
         console.log('✅ Image successfully added to favorites');

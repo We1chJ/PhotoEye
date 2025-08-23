@@ -19,3 +19,10 @@ export interface CaptureResult {
         mimeType?: string;
     };
 }
+
+export type Photo = {
+  id: number;           // int8 (bigint in PostgreSQL maps to number in TypeScript)
+  created_at: string;   // timestamp as ISO string
+  uid: string;          // uuid - foreign key reference to auth.users.id
+  image: string;        // text - image URL or path
+}
