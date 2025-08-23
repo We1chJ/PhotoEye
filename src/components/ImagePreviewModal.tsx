@@ -48,19 +48,28 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
 
     setIsUploading(true);
     try {
-      await uploadImageToStorage(captureResult);
-      setIsStarred(true);
-      console.log('✅ Image successfully added to favorites');
-      
-      // Show success toast
-      toast.success('Image added to favorites!', {
-        description: 'Your street view capture has been saved successfully.',
-        duration: 3000,
-        icon: '⭐'
-      });
+      const result = await uploadImageToStorage(captureResult);
+      if (result.success) {
+        setIsStarred(true);
+        console.log('✅ Image successfully added to favorites');
+
+        // Show success toast
+        toast.success('Image added to favorites!', {
+          description: result.message,
+          duration: 3000,
+          icon: '⭐'
+        });
+      } else {
+        // Show error toast
+        toast.error('Failed to save image', {
+          description: result.message,
+          duration: 4000,
+          icon: '❌'
+        });
+      }
     } catch (error) {
       console.error('❌ Failed to add image to favorites:', error);
-      
+
       // Show error toast
       toast.error('Failed to save image', {
         description: 'There was a problem saving your image to favorites. Please try again.',
@@ -70,7 +79,7 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
     } finally {
       setIsUploading(false);
     }
-  };
+  }
 
   return (
     <div
@@ -94,11 +103,10 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
             <button
               onClick={handleStarClick}
               disabled={isUploading || isStarred}
-              className={`p-2 rounded-full transition-all duration-200 ${
-                isStarred
-                  ? 'text-yellow-500 bg-yellow-50 hover:bg-yellow-100'
-                  : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
-              } ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              className={`p-2 rounded-full transition-all duration-200 ${isStarred
+                ? 'text-yellow-500 bg-yellow-50 hover:bg-yellow-100'
+                : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
+                } ${isUploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               title={isStarred ? 'Added to favorites' : 'Add to favorites'}
             >
               {isUploading ? (
@@ -106,17 +114,17 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               ) : (
-                <svg 
-                  className="w-6 h-6" 
-                  fill={isStarred ? "currentColor" : "none"} 
-                  stroke="currentColor" 
+                <svg
+                  className="w-6 h-6"
+                  fill={isStarred ? "currentColor" : "none"}
+                  stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    strokeWidth="2" 
-                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" 
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
                   />
                 </svg>
               )}
