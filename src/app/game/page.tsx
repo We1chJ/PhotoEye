@@ -64,6 +64,20 @@ const GamePage = () => {
     console.log('🎮 GamePage Location State:', locationState);
   }, [locationState]);
 
+  // Save location to localStorage whenever coords or name change
+  useEffect(() => {
+    if (currentCoords) {
+      localStorage.setItem(
+        'streetExplorerLocation',
+        JSON.stringify({
+          coords: currentCoords,
+          locationName: locationName || 'Unknown',
+          timestamp: Date.now(),
+        })
+      );
+    }
+  }, [currentCoords, locationName]);
+
   // Modified capture function using server-side captureCurrentViewWithOptions
   const handleCaptureImage = useCallback(async () => {
     if (!panoramaRef.current || !currentCoords) {
@@ -313,10 +327,35 @@ const GamePage = () => {
       });
   }, [apiKey, dispatch]);
 
+  // Combined initial location setup: load from localStorage if recent, else try geolocation
   useEffect(() => {
     dispatch(setLoading(true));
     setLoadingType('initial');
 
+    const savedLocation = localStorage.getItem('streetExplorerLocation');
+    const MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours - adjust as needed
+
+    if (savedLocation) {
+      try {
+        const parsed = JSON.parse(savedLocation);
+        const age = Date.now() - parsed.timestamp;
+
+        if (age < MAX_AGE && parsed.coords && parsed.coords.lat && parsed.coords.lng) {
+          console.log('📍 Loading saved location from localStorage:', parsed);
+          dispatch(setCoords(parsed.coords));
+          dispatch(setLocationName(parsed.locationName || 'Unknown Place'));
+          dispatch(setLoading(false));
+          setLoadingType(null);
+          return;
+        } else {
+          console.log('🕰️ Saved location is too old or invalid, proceeding to geolocation');
+        }
+      } catch (error) {
+        console.error('❌ Error parsing saved location:', error);
+      }
+    }
+
+    // If no valid saved location, try geolocation
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
