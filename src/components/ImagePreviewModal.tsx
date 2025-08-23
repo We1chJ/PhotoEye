@@ -28,6 +28,26 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
 }) => {
   if (!showImagePreview || !capturedImage) return null;
 
+  // Helper function to convert base64 to Blob URL
+  const getBase64BlobUrl = (base64: string): string => {
+    try {
+      // Extract the base64 data (remove "data:image/png;base64," prefix if present)
+      const base64Data = base64.includes('base64,') ? base64.split('base64,')[1] : base64;
+      // Decode base64 to binary
+      const binary = atob(base64Data);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
+      }
+      // Create Blob and URL
+      const blob = new Blob([array], { type: 'image/png' });
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('Error creating Blob URL:', error);
+      return base64; // Fallback to original base64 URL
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/30 flex items-end justify-center z-50"
@@ -111,10 +131,15 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
               Close
             </button>
             <a
-              href={capturedImage}
+              href={getBase64BlobUrl(capturedImage)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-4 px-6 rounded-lg font-medium transition-colors flex items-center justify-center space-x-3 text-lg"
+              onClick={(e) => {
+                // Revoke the Blob URL after a short delay to clean up memory
+                const blobUrl = getBase64BlobUrl(capturedImage);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+              }}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
