@@ -645,13 +645,18 @@ const GamePage = () => {
       {!isFetchingLocation && !currentCoords && <InitialLocationOverlay />}
 
       <ImagePreviewModal
-        capturedImage={capturedImage}
+        captureResult={{
+          url: capturedImage,
+          metadata: {
+            ...imageMetadata,
+            locationName,
+            lat: currentCoords?.lat,
+            lng: currentCoords?.lng,
+          }
+        }}
         showImagePreview={showImagePreview}
         setShowImagePreview={setShowImagePreview}
-        locationName={locationName}
-        currentCoords={currentCoords}
         onDownload={handleDownloadImage}
-        metadata={imageMetadata} // Pass metadata to modal
       />
     </div>
   );
