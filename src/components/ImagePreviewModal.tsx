@@ -91,11 +91,6 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
                     <span className="font-semibold">FOV:</span> {metadata.fov}°
                   </div>
                 )}
-                {metadata.zoom !== undefined && (
-                  <div>
-                    <span className="font-semibold">Zoom:</span> {metadata.zoom}
-                  </div>
-                )}
               </div>
             )}
           </div>
