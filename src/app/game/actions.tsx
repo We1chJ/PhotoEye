@@ -70,3 +70,26 @@ export async function uploadImageToStorage(
 
     return { success: true, message: "Upload successful!" };
 }
+
+
+export async function getPhotosFromUser(userId: string) {
+    if (!userId) {
+        return { success: false, message: "User ID is required", photos: [] };
+    }
+
+    if (!supabaseAdmin) {
+        return { success: false, message: "Supabase client not initialized", photos: [] };
+    }
+
+    const { data, error } = await supabaseAdmin
+        .from('Photos')
+        .select('*')
+        .eq('uid', userId)
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        return { success: false, message: error.message || "Failed to fetch photos", photos: [] };
+    }
+
+    return { success: true, message: "Photos fetched successfully", photos: data || [] };
+}

@@ -42,7 +42,7 @@ export function AppSidebar() {
   if (!mounted) {
     // Return a skeleton during SSR to prevent hydration mismatch
     return (
-      <Sidebar collapsible="icon">
+      <Sidebar collapsible="icon" className="w-56">
         <SidebarHeader>
           <div className="h-12 bg-gray-100 animate-pulse rounded"></div>
         </SidebarHeader>
@@ -61,31 +61,36 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" className="w-50">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-2">
-              <NextLink href="/">
-                <img
-                  src="/photoeye-light.png"
-                  alt="PhotoEye"
-                  className="!size-8 dark:hidden"
-                />
-                <img
-                  src="/photoeye.png"
-                  alt="PhotoEye"
-                  className="!size-8 hidden dark:block"
-                />
-                <span className="text-lg font-semibold">PhotoEye</span>
-              </NextLink>
-            </SidebarMenuButton>
+            <div className="flex items-center justify-between w-full">
+              <SidebarMenuButton asChild className={`data-[slot=sidebar-menu-button]:!p-2 ${isCollapsed ? 'hidden' : ''}`}>
+                <NextLink href="/">
+                  <img
+                    src="/photoeye-light.png"
+                    alt="PhotoEye"
+                    className="!size-8 dark:hidden"
+                  />
+                  <img
+                    src="/photoeye.png"
+                    alt="PhotoEye"
+                    className="!size-8 hidden dark:block"
+                  />
+                  <span className="text-lg font-semibold">PhotoEye</span>
+                </NextLink>
+              </SidebarMenuButton>
+              <div className={isCollapsed ? "flex justify-center w-full" : "flex justify-end"}>
+                <SidebarTrigger className="rounded-md bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors h-8 w-8 flex items-center justify-center" />
+              </div>
+            </div>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className={isCollapsed ? "border-t border-gray-200" : ""}>
           {!isCollapsed && <SidebarGroupLabel>Play</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu>
@@ -105,7 +110,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
+        <SidebarGroup className={isCollapsed ? "border-t border-gray-200" : ""}>
           {!isCollapsed && <SidebarGroupLabel>Share</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu>
@@ -140,7 +145,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className={isCollapsed ? "border-t border-gray-200" : ""}>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Settings">
