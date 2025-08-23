@@ -9,20 +9,18 @@ import {
   setLocationName,
   setLoading,
   setError,
-  selectLocation,
   selectCoords,
   selectLocationName,
-  selectIsLoading
+  selectIsLoading,
 } from '@/store/locationSlice';
 import {
   getAddressFromLatLng,
   createGeocoder,
   loadGoogleMapsScript,
   formatCoordinates,
-  DEFAULT_COORDINATES,
-  type LocationData
+  type LocationData,
 } from '@/utils/localizer';
-import { captureCurrentView, captureCurrentViewWithOptions } from '@/utils/imageCapture';
+import { captureCurrentViewWithOptions } from '@/utils/imageCapture';
 import ImageCaptureButton from '@/components/ImageCaptureButton';
 import ImagePreviewModal from '@/components/ImagePreviewModal';
 import RandomLocationButton from '@/components/RandomLocationButton';
@@ -51,144 +49,96 @@ const GamePage = () => {
   }>({ type: null, message: '' });
   const [loadingType, setLoadingType] = useState<'initial' | 'random' | 'capture' | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [imageMetadata, setImageMetadata] = useState<any>(null); // Store metadata from capture
   const [showImagePreview, setShowImagePreview] = useState(false);
 
   const dispatch = useAppDispatch();
-  const location = useAppSelector(selectLocation);
   const currentCoords = useAppSelector(selectCoords);
   const locationName = useAppSelector(selectLocationName);
   const isFetchingLocation = useAppSelector(selectIsLoading);
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAP_KEY;
 
-  const locationState = useAppSelector(state => state.location);
+  const locationState = useAppSelector((state) => state.location);
   useEffect(() => {
     console.log('🎮 GamePage Location State:', locationState);
   }, [locationState]);
 
-  // Modified capture function with loading state
+  // Modified capture function using server-side captureCurrentViewWithOptions
   const handleCaptureImage = useCallback(async () => {
-    if (!panoramaRef.current) {
-      console.error('❌ Cannot capture image: panorama not available');
+    if (!panoramaRef.current || !currentCoords) {
+      console.error('❌ Cannot capture image: panorama or coordinates not available');
+      setStreetViewStatus({
+        type: 'error',
+        message: 'Cannot capture image: Street View not initialized',
+      });
       return;
     }
 
     setLoadingType('capture');
     try {
-      console.log('📸 Starting secure image capture...');
+      console.log('📸 Starting server-side image capture...');
 
-      if (capturedImage && capturedImage.startsWith('blob:')) {
-        URL.revokeObjectURL(capturedImage);
+      // Clean up previous image and metadata to prevent state issues
+      if (capturedImage && capturedImage.startsWith('data:')) {
+        console.log('🧹 Cleaning up previous image URL');
+        setCapturedImage(null);
+        setImageMetadata(null);
       }
 
-      const imageUrl = await captureCurrentView(panoramaRef.current);
+      const position = panoramaRef.current.getPosition();
+      const pov = panoramaRef.current.getPov();
+      const zoom = panoramaRef.current.getZoom();
 
-      if (imageUrl) {
-        console.log('✅ Image captured successfully!');
-        setCapturedImage(imageUrl);
+      if (!position || pov.heading === undefined || pov.pitch === undefined || zoom === undefined) {
+        throw new Error('Invalid Street View parameters');
+      }
+
+      const captureResult = await captureCurrentViewWithOptions(
+        position.lat(),
+        position.lng(),
+        pov.heading,
+        pov.pitch,
+        zoom,
+        {
+          size: '640x640',
+          format: 'jpg',
+          quality: 0.9,
+        }
+      );
+
+      if (captureResult.url) {
+        console.log('✅ Image captured successfully via server action!');
+        setCapturedImage(captureResult.url);
+        setImageMetadata(captureResult.metadata); // Store metadata for preview
         setShowImagePreview(true);
+        setStreetViewStatus({
+          type: 'success',
+          message: 'Image captured successfully!',
+        });
       } else {
-        console.error('❌ Failed to capture Street View image');
+        console.error('❌ Failed to capture Street View image:', captureResult.error);
         setStreetViewStatus({
           type: 'error',
-          message: 'Failed to capture image. Please try again.'
+          message: captureResult.error || 'Failed to capture image. Please try again.',
         });
       }
     } catch (error) {
       console.error('❌ Error capturing image:', error);
       setStreetViewStatus({
         type: 'error',
-        message: 'An error occurred while capturing the image.'
+        message: 'An error occurred while capturing the image.',
       });
     } finally {
       setLoadingType(null);
     }
-  }, [capturedImage]);
-
-  const handleCaptureImageWithLoading = useCallback(async () => {
-    if (!panoramaRef.current) {
-      console.error('❌ Cannot capture image: panorama not available');
-      return;
-    }
-
-    setLoadingType('capture');
-    try {
-      console.log('📸 Starting secure image capture...');
-
-      if (capturedImage && capturedImage.startsWith('blob:')) {
-        URL.revokeObjectURL(capturedImage);
-      }
-
-      const imageUrl = await captureCurrentView(panoramaRef.current);
-
-      if (imageUrl) {
-        console.log('✅ Image captured successfully!');
-        setCapturedImage(imageUrl);
-        setShowImagePreview(true);
-      } else {
-        console.error('❌ Failed to capture Street View image');
-        setStreetViewStatus({
-          type: 'error',
-          message: 'Failed to capture image. Please try again.'
-        });
-      }
-    } catch (error) {
-      console.error('❌ Error capturing image:', error);
-      setStreetViewStatus({
-        type: 'error',
-        message: 'An error occurred while capturing the image.'
-      });
-    } finally {
-      setLoadingType(null);
-    }
-  }, [capturedImage]);
-
-  const handleCaptureImageEnhanced = useCallback(async () => {
-    if (!panoramaRef.current) {
-      console.error('❌ Cannot capture image: panorama not available');
-      return;
-    }
-
-    setLoadingType('capture');
-    try {
-      console.log('📸 Starting enhanced image capture...');
-
-      if (capturedImage && capturedImage.startsWith('blob:')) {
-        URL.revokeObjectURL(capturedImage);
-      }
-
-      const result = await captureCurrentViewWithOptions(panoramaRef.current, {
-        size: '800x800',
-        format: 'jpg',
-      });
-
-      if (result.url) {
-        console.log('✅ Enhanced capture successful!', result.metadata);
-        setCapturedImage(result.url);
-        setShowImagePreview(true);
-      } else {
-        console.error('❌ Enhanced capture failed:', result.error);
-        setStreetViewStatus({
-          type: 'error',
-          message: result.error || 'Failed to capture image'
-        });
-      }
-    } catch (error) {
-      console.error('❌ Error in enhanced capture:', error);
-      setStreetViewStatus({
-        type: 'error',
-        message: 'An error occurred while capturing the image.'
-      });
-    } finally {
-      setLoadingType(null);
-    }
-  }, [capturedImage]);
+  }, [currentCoords, capturedImage]);
 
   useEffect(() => {
     return () => {
-      if (capturedImage && capturedImage.startsWith('blob:')) {
-        URL.revokeObjectURL(capturedImage);
-        console.log('🧹 Cleaned up image URL on unmount');
+      if (capturedImage && capturedImage.startsWith('data:')) {
+        console.log('🧹 Cleaning up image URL on unmount');
+        setCapturedImage(null);
       }
     };
   }, [capturedImage]);
@@ -198,59 +148,68 @@ const GamePage = () => {
 
     const link = document.createElement('a');
     link.href = capturedImage;
-    link.download = `streetview-${Date.now()}.jpg`;
+    const timestamp = imageMetadata?.capturedAt
+      ? new Date(imageMetadata.capturedAt).toISOString().replace(/[:.]/g, '-')
+      : Date.now();
+    link.download = `streetview-${timestamp}.jpg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [capturedImage]);
+  }, [capturedImage, imageMetadata]);
 
-  const findNearestStreetView = useCallback((coords: { lat: number, lng: number }, callback: (found: boolean, data: any, distance?: number) => void) => {
-    if (!window.google) return;
+  const findNearestStreetView = useCallback(
+    (coords: { lat: number; lng: number }, callback: (found: boolean, data: any, distance?: number) => void) => {
+      if (!window.google) return;
 
-    const streetViewService = new google.maps.StreetViewService();
-    const searchRadiuses = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
-    let currentRadiusIndex = 0;
+      const streetViewService = new google.maps.StreetViewService();
+      const searchRadiuses = [50, 100, 250, 500, 1000, 2000, 5000, 10000];
+      let currentRadiusIndex = 0;
 
-    const searchAtRadius = (radiusIndex: number) => {
-      if (radiusIndex >= searchRadiuses.length) {
-        callback(false, null);
-        return;
-      }
-
-      const radius = searchRadiuses[radiusIndex];
-      console.log(`🔍 Searching for Street View within ${radius}m of coordinates:`, coords);
-
-      streetViewService.getPanorama({
-        location: coords,
-        radius: radius,
-        source: google.maps.StreetViewSource.OUTDOOR
-      }, (data, status) => {
-        if (status === 'OK' && data && data.location) {
-          const foundLocation = data.location.latLng;
-          if (foundLocation) {
-            const distance = google.maps.geometry.spherical.computeDistanceBetween(
-              new google.maps.LatLng(coords.lat, coords.lng),
-              foundLocation
-            );
-
-            console.log(`✅ Found Street View ${Math.round(distance)}m away at:`, {
-              lat: foundLocation.lat(),
-              lng: foundLocation.lng()
-            });
-
-            callback(true, data, distance);
-          } else {
-            callback(true, data);
-          }
-        } else {
-          console.log(`❌ No Street View found within ${radius}m, trying larger radius...`);
-          searchAtRadius(radiusIndex + 1);
+      const searchAtRadius = (radiusIndex: number) => {
+        if (radiusIndex >= searchRadiuses.length) {
+          callback(false, null);
+          return;
         }
-      });
-    };
 
-    searchAtRadius(currentRadiusIndex);
-  }, []);
+        const radius = searchRadiuses[radiusIndex];
+        console.log(`🔍 Searching for Street View within ${radius}m of coordinates:`, coords);
+
+        streetViewService.getPanorama(
+          {
+            location: coords,
+            radius: radius,
+            source: google.maps.StreetViewSource.OUTDOOR,
+          },
+          (data, status) => {
+            if (status === 'OK' && data && data.location) {
+              const foundLocation = data.location.latLng;
+              if (foundLocation) {
+                const distance = google.maps.geometry.spherical.computeDistanceBetween(
+                  new google.maps.LatLng(coords.lat, coords.lng),
+                  foundLocation
+                );
+
+                console.log(`✅ Found Street View ${Math.round(distance)}m away at:`, {
+                  lat: foundLocation.lat(),
+                  lng: foundLocation.lng(),
+                });
+
+                callback(true, data, distance);
+              } else {
+                callback(true, data);
+              }
+            } else {
+              console.log(`❌ No Street View found within ${radius}m, trying larger radius...`);
+              searchAtRadius(radiusIndex + 1);
+            }
+          }
+        );
+      };
+
+      searchAtRadius(currentRadiusIndex);
+    },
+    []
+  );
 
   const updateLocationName = useCallback(
     debounce(async (lat: number, lng: number) => {
@@ -276,46 +235,49 @@ const GamePage = () => {
     [dispatch, geocoder]
   );
 
-  const updateStreetViewPosition = useCallback((newCoords: { lat: number, lng: number }) => {
-    if (!panoramaRef.current) return;
+  const updateStreetViewPosition = useCallback(
+    (newCoords: { lat: number; lng: number }) => {
+      if (!panoramaRef.current) return;
 
-    console.log('🔄 Finding nearest Street View to:', newCoords);
+      console.log('🔄 Finding nearest Street View to:', newCoords);
 
-    findNearestStreetView(newCoords, (found, data, distance) => {
-      if (found && data && panoramaRef.current) {
-        const actualLocation = data.location?.latLng;
-        if (actualLocation) {
-          const actualCoords = {
-            lat: actualLocation.lat(),
-            lng: actualLocation.lng()
-          };
+      findNearestStreetView(newCoords, (found, data, distance) => {
+        if (found && data && panoramaRef.current) {
+          const actualLocation = data.location?.latLng;
+          if (actualLocation) {
+            const actualCoords = {
+              lat: actualLocation.lat(),
+              lng: actualLocation.lng(),
+            };
 
-          setIsUpdatingFromRedux(true);
+            setIsUpdatingFromRedux(true);
 
-          panoramaRef.current.setPosition(actualCoords);
-          panoramaRef.current.setPov({ heading: 0, pitch: 0 });
-          panoramaRef.current.setZoom(1);
+            panoramaRef.current.setPosition(actualCoords);
+            panoramaRef.current.setPov({ heading: 0, pitch: 0 });
+            panoramaRef.current.setZoom(1);
 
-          dispatch(setCoords(actualCoords));
+            dispatch(setCoords(actualCoords));
 
-          if (distance && distance > 100) {
-            console.log(`📍 Moved ${Math.round(distance)}m from original coordinates to nearest Street View`);
+            if (distance && distance > 100) {
+              console.log(`📍 Moved ${Math.round(distance)}m from original coordinates to nearest Street View`);
+            }
+
+            setStreetViewStatus({ type: null, message: '' });
+            updateLocationName(actualCoords.lat, actualCoords.lng);
+
+            setTimeout(() => setIsUpdatingFromRedux(false), 100);
           }
-
-          setStreetViewStatus({ type: null, message: '' });
-          updateLocationName(actualCoords.lat, actualCoords.lng);
-
-          setTimeout(() => setIsUpdatingFromRedux(false), 100);
+        } else {
+          console.log('❌ No Street View found within 25km radius');
+          setStreetViewStatus({
+            type: 'error',
+            message: 'No Street View available within 25km of this location',
+          });
         }
-      } else {
-        console.log('❌ No Street View found within 25km radius');
-        setStreetViewStatus({
-          type: 'error',
-          message: 'No Street View available within 25km of this location'
-        });
-      }
-    });
-  }, [findNearestStreetView, dispatch, updateLocationName]);
+      });
+    },
+    [findNearestStreetView, dispatch, updateLocationName]
+  );
 
   useEffect(() => {
     if (!apiKey) {
@@ -380,7 +342,7 @@ const GamePage = () => {
         },
         {
           timeout: 10000,
-          enableHighAccuracy: false
+          enableHighAccuracy: false,
         }
       );
     } else {
@@ -427,7 +389,7 @@ const GamePage = () => {
         if (newPosition) {
           const newCoords = {
             lat: newPosition.lat(),
-            lng: newPosition.lng()
+            lng: newPosition.lng(),
           };
 
           console.log('📍 Street View position changed to:', newCoords);
@@ -446,7 +408,7 @@ const GamePage = () => {
           console.log('❌ Street View error:', status);
           setStreetViewStatus({
             type: 'error',
-            message: `Street View unavailable: ${status}`
+            message: `Street View unavailable: ${status}`,
           });
         }
       }
@@ -490,7 +452,7 @@ const GamePage = () => {
 
       dispatch(setLocation({
         coords: newCoords,
-        locationName: name
+        locationName: name,
       }));
 
       console.log('✅ Random location set in Redux');
@@ -564,7 +526,7 @@ const GamePage = () => {
               top: `${Math.random() * 100}%`,
               left: `${Math.random() * 100}%`,
               animationDelay: `${i * 0.5}s`,
-              animationDuration: '2s'
+              animationDuration: '2s',
             }}
           ></div>
         ))}
@@ -603,7 +565,6 @@ const GamePage = () => {
     </div>
   );
 
-  // Updated Capture Loading Overlay with grey-out popover
   const CaptureLoadingOverlay = () => (
     <div className="absolute inset-0 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-40 transition-opacity duration-300 ease-in-out">
       <div className="bg-gray-800/90 border border-gray-600/50 rounded-xl shadow-2xl p-6 max-w-xs text-center animate-fade-in">
@@ -690,6 +651,7 @@ const GamePage = () => {
         locationName={locationName}
         currentCoords={currentCoords}
         onDownload={handleDownloadImage}
+        metadata={imageMetadata} // Pass metadata to modal
       />
     </div>
   );

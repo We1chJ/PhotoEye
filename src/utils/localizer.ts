@@ -1,3 +1,4 @@
+'use client'
 /**
  * localizer.ts - Location and geocoding utilities
  * Extracted from MapDrawer component for reusability

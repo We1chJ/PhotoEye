@@ -5,10 +5,16 @@ import { formatCoordinates } from '@/utils/localizer';
 interface ImagePreviewModalProps {
   capturedImage: string | null;
   showImagePreview: boolean;
-  setShowImagePreview: React.Dispatch<React.SetStateAction<boolean>>;
+  setShowImagePreview: (show: boolean) => void;
   locationName: string | null;
   currentCoords: { lat: number; lng: number } | null;
   onDownload: () => void;
+  metadata?: {
+    capturedAt?: string;
+    fov?: number;
+    zoom?: number;
+    [key: string]: any;
+  };
 }
 
 const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
@@ -18,6 +24,7 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
   locationName,
   currentCoords,
   onDownload,
+  metadata,
 }) => {
   if (!showImagePreview || !capturedImage) return null;
 
@@ -61,19 +68,37 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
               }}
             />
           </div>
-          {locationName && (
-            <div className="bg-blue-50 rounded-lg p-4 mb-6">
-              <div className="font-semibold text-gray-800 flex items-center space-x-2 text-lg">
-                <span>📍</span>
-                <span>{locationName}</span>
-              </div>
-              {currentCoords && (
-                <div className="text-base text-gray-600 mt-2 font-mono">
-                  {formatCoordinates(currentCoords.lat, currentCoords.lng)}
-                </div>
-              )}
+          <div className="bg-blue-50 rounded-lg p-4 mb-6">
+            <div className="font-semibold text-gray-800 flex items-center space-x-2 text-lg">
+              <span>📍</span>
+              <span>{locationName || 'Unknown'}</span>
             </div>
-          )}
+            {currentCoords && (
+              <div className="text-base text-gray-600 mt-2 font-mono">
+                {formatCoordinates(currentCoords.lat, currentCoords.lng)}
+              </div>
+            )}
+            {metadata && (
+              <div className="mt-2 text-gray-700 text-base space-y-1">
+                {metadata.capturedAt && (
+                  <div>
+                    <span className="font-semibold">Captured At:</span>{' '}
+                    {new Date(metadata.capturedAt).toLocaleString()}
+                  </div>
+                )}
+                {metadata.fov !== undefined && (
+                  <div>
+                    <span className="font-semibold">FOV:</span> {metadata.fov}°
+                  </div>
+                )}
+                {metadata.zoom !== undefined && (
+                  <div>
+                    <span className="font-semibold">Zoom:</span> {metadata.zoom}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex gap-4">
             <button
               onClick={onDownload}
