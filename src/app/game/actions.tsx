@@ -34,6 +34,10 @@ export async function uploadImageToStorage(
 
     const file = new File([buffer], path, { type: contentType });
 
+    if (!supabaseAdmin) {
+        return { success: false, message: "Supabase client not initialized" };
+    }
+
     const { error } = await supabaseAdmin.storage
         .from('Screenshots')
         .upload(path, file, {
