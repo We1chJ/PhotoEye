@@ -9,9 +9,17 @@ function MainContentWrapper({ children }: { children: React.ReactNode }) {
     const isCollapsed = state === "collapsed";
 
     return (
-        <main className={`flex-1 h-full overflow-auto transition-all duration-300 min-w-0 relative ${isCollapsed ? 'ml-0' : 'ml-10'
+        <main className={`flex-1 h-full transition-all duration-300 min-w-0 relative p-2 ${isCollapsed ? 'ml-0' : 'ml-10'
             }`}>
-            {children}
+            {/* Scaled down rounded content area - only x-axis scaling */}
+            <div 
+                className="h-full w-full bg-white rounded-2xl shadow-lg overflow-hidden"
+                style={{ transform: 'scale(0.9999)' }}
+            >
+                <div className="h-full w-full overflow-auto">
+                    {children}
+                </div>
+            </div>
         </main>
     );
 }
@@ -23,7 +31,8 @@ export default function GameLayout({
 }) {
     return (
         <SidebarProvider>
-            <div className="flex h-screen w-full">
+            {/* Background matches sidebar color */}
+            <div className="flex h-screen w-full bg-sidebar">
                 <AppSidebar />
                 <MainContentWrapper>
                     {children}

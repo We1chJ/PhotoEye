@@ -42,7 +42,7 @@ export function AppSidebar() {
   if (!mounted) {
     // Return a skeleton during SSR to prevent hydration mismatch
     return (
-      <Sidebar collapsible="icon" className="w-56">
+      <Sidebar collapsible="icon" className="w-50 border-none shadow-none outline-none">
         <SidebarHeader>
           <div className="h-12 bg-gray-100 animate-pulse rounded"></div>
         </SidebarHeader>
@@ -61,13 +61,13 @@ export function AppSidebar() {
   }
 
   return (
-    <Sidebar collapsible="icon" className="w-50">
+    <Sidebar collapsible="icon" className="w-50 border-none shadow-none outline-none">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <div className="flex items-center justify-between w-full">
               <SidebarMenuButton asChild className={`data-[slot=sidebar-menu-button]:!p-2 ${isCollapsed ? 'hidden' : ''}`}>
-                <NextLink href="/">
+                <div>
                   <img
                     src="/photoeye-light.png"
                     alt="PhotoEye"
@@ -79,7 +79,7 @@ export function AppSidebar() {
                     className="!size-8 hidden dark:block"
                   />
                   <span className="text-lg font-semibold">PhotoEye</span>
-                </NextLink>
+                </div>
               </SidebarMenuButton>
               <div className={isCollapsed ? "flex justify-center w-full" : "flex justify-end"}>
                 <SidebarTrigger className="rounded-md bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors h-8 w-8 flex items-center justify-center" />
@@ -90,7 +90,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup className={isCollapsed ? "border-t border-gray-200" : ""}>
+        <SidebarGroup>
           {!isCollapsed && <SidebarGroupLabel>Play</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu>
@@ -110,7 +110,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className={isCollapsed ? "border-t border-gray-200" : ""}>
+        <SidebarGroup>
           {!isCollapsed && <SidebarGroupLabel>Share</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu>
@@ -145,7 +145,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className={isCollapsed ? "border-t border-gray-200" : ""}>
+      <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Settings">
