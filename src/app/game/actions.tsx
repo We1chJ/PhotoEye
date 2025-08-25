@@ -1,6 +1,6 @@
 'use server'
 import { supabaseAdmin } from "@/lib/supabase";
-import { CaptureResult } from "@/types/type";
+import { CaptureResult, Photo } from "@/types/type";
 import { v4 as uuidv4 } from 'uuid';
 import type { UserResponse } from '@supabase/supabase-js';
 
@@ -71,8 +71,11 @@ export async function uploadImageToStorage(
     return { success: true, message: "Upload successful!" };
 }
 
-
-export async function getPhotosFromUser(userId: string) {
+export async function getPhotosFromUser(userId: string): Promise<{
+    success: boolean;
+    message: string;
+    photos: Photo[];
+}> {
     if (!userId) {
         return { success: false, message: "User ID is required", photos: [] };
     }
@@ -81,15 +84,38 @@ export async function getPhotosFromUser(userId: string) {
         return { success: false, message: "Supabase client not initialized", photos: [] };
     }
 
-    const { data, error } = await supabaseAdmin
+    // Fetch photo metadata from the Photos table
+    const { data: photos, error: fetchError } = await supabaseAdmin
         .from('Photos')
-        .select('*')
+        .select('id, created_at, uid, image')
         .eq('uid', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }) as { data: Photo[] | null; error: any };
 
-    if (error) {
-        return { success: false, message: error.message || "Failed to fetch photos", photos: [] };
+    if (fetchError) {
+        return { success: false, message: fetchError.message || "Failed to fetch photos", photos: [] };
     }
 
-    return { success: true, message: "Photos fetched successfully", photos: data || [] };
+    // Generate public URLs for each photo from the Screenshots bucket
+    const photosWithUrls = await Promise.all(
+        photos?.map(async (photo: Photo) => {
+            const { data } = supabaseAdmin!
+                .storage
+                .from('Screenshots')
+                .getPublicUrl(photo.image);
+
+            // Return a new Photo object with the public URL as the image field
+            return {
+                id: photo.id,
+                created_at: photo.created_at,
+                uid: photo.uid,
+                image: data.publicUrl
+            };
+        }) || []
+    );
+
+    return { 
+        success: true, 
+        message: "Photo URLs fetched successfully", 
+        photos: photosWithUrls || [] 
+    };
 }
